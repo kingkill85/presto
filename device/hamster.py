@@ -1092,19 +1092,23 @@ RIM_TOP = len(WHEEL_RIM) * 3 // 4  # rim block at 12 o'clock
 
 
 def progress():
-    """Share of jobs done (0..1) of the first running pipeline, or None."""
+    """(share of jobs done 0..1, number of pipelines) over all running
+    pipelines together, or (None, 0)."""
+    done = total = n = 0
     for it in pipe_items:
-        if it.get("s") == "running" and "/" in it.get("p", ""):
-            done, total = (int(v) for v in it["p"].split("/"))
-            return done / total if total else None
-    return None
+        if it.get("s") == "running":
+            n += 1
+            if "/" in it.get("p", ""):
+                d, t = (int(v) for v in it["p"].split("/"))
+                done, total = done + d, total + t
+    return (done / total if total else None), n
 
 
 def draw_wheel_rim(cx, shift, broken):
     """The rim fills up in blue, clockwise from the top, as the
     pipeline's jobs finish; the rest shows the wheel turning."""
     n = len(WHEEL_RIM)
-    frac = None if broken else progress()
+    frac, running = (None, 0) if broken else progress()
     filled = int(frac * n + 0.5) if frac is not None else 0
     for i, (dx, dy) in enumerate(WHEEL_RIM):
         if broken:
@@ -1114,6 +1118,15 @@ def draw_wheel_rim(cx, shift, broken):
         else:
             display.set_pen(WHEEL_DARK_PEN if (i + shift) % 3 == 0 else WHEEL_PEN)
         display.rectangle(cx + dx - 4, WHEEL_CY + dy - 4, 8, 8)
+    if running > 1:  # how many pipelines are running: a little sign on top
+        label = str(running)
+        w = display.measure_text(label, 2)
+        top = WHEEL_CY - WHEEL_R - 26
+        display.set_pen(PROGRESS_DARK_PEN)
+        display.rectangle(cx - w // 2 - 4, top, w + 8, 20)
+        display.rectangle(cx - 1, top + 20, 3, 6)  # post down to the rim
+        display.set_pen(TEXT_PEN)
+        display.text(label, cx - w // 2 + 1, top + 3, -1, 2)
 
 
 PIPE_PEN = {"running": COLOURS["#"], "pending": WHEEL_PEN, "created": WHEEL_PEN, "failed": FAIL_PEN,

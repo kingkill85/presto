@@ -95,8 +95,9 @@ develop branch) are added. Rows without CI are left out; running pipelines
 come first, then failed ones, then the most recent. It also repeats the agent
 status, so the Presto catches up after a restart.
 
-While a pipeline runs, Messy jogs in the wheel now and then and the rim fills
-up in blue with the jobs done. A failed pipeline stops the wheel, smokes and
+While pipelines run, Messy jogs in the wheel now and then and the rim fills
+up in blue with the jobs done of all of them together (a sign on top shows how
+many run). A failed pipeline stops the wheel, smokes and
 pulses the LEDs red; when it turns green Messy cheers. Different beeps sound
 when a pipeline starts, passes or fails.
 
