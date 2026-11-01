@@ -926,11 +926,12 @@ sound_timer = machine.Timer(period=10, callback=_sound_tick)
 
 # --- agent status from Herdr ------------------------------------------------
 # herdr-plugin/notify.py sends {"status": "working", ...} to UDP port 47474 on
-# every change. Without updates the status fades out after a while, in case
-# the PC went away.
+# every change, and the pipeline poller repeats it every ~35 s. When Herdr
+# closes the poller says goodbye ("none"); if the PC just goes away the status
+# fades out after a few minutes without updates.
 
 AGENT_PORT = 47474
-AGENT_STALE_MS = 45 * 60 * 1000
+AGENT_STALE_MS = 3 * 60 * 1000
 CLAWD_FOR = {"working": "work", "blocked": "alert", "done": "done"}
 
 agent_status = None

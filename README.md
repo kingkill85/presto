@@ -103,7 +103,9 @@ pulses the LEDs red; when it turns green Messy cheers. Different beeps sound
 when a pipeline starts, passes or fails.
 
 Herdr starts the poller with the server and `poller_ctl.py ensure` restarts it
-on workspace focus if needed; it exits when Herdr goes away. Control it with
+on workspace focus if needed. When Herdr goes away the poller tells the Presto
+that nothing is going on any more and exits; if the PC just disappears, the
+Presto drops agents and pipelines after 3 minutes without updates. Control it with
 the plugin actions `presto.clawd.pipelines-start|stop|restart|status`.
 Settings go into `$(herdr plugin config-dir presto.clawd)/pipelines.json`:
 

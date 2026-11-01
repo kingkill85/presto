@@ -351,7 +351,14 @@ def main():
         if not args.once:
             misses = 0 if herdr_alive() else misses + 1
             if misses >= 3:
-                print("herdr is gone, exiting", flush=True)
+                # tell the Presto that nothing is going on any more, so Clawd
+                # and Messy don't keep working after Herdr was closed
+                for msg in ({"status": "none", "agents": 0, "count": 0, "title": "", "list": []},
+                            {"type": "pipelines", "status": "none", "items": []}):
+                    for _ in range(3):
+                        sock.sendto(json.dumps(msg).encode(), (args.target, PORT))
+                        time.sleep(0.05)
+                print("herdr is gone, said goodbye to the Presto, exiting", flush=True)
                 break
         try:
             payload = json.dumps(collect(pinned), separators=(",", ":")).encode()
