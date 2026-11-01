@@ -1,2 +1,5 @@
 device/secrets.py
 __pycache__/
+device/*.rtttl
+*.rtttl
+device/ha_config.py

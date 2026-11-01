@@ -1,0 +1,55 @@
+id = "presto.clawd"
+name = "Presto Clawd"
+version = "0.2.0"
+min_herdr_version = "0.9.0"
+description = "Show your coding agents and GitLab pipelines on a Pimoroni Presto: Clawd shows the agents, the hamster runs the pipelines."
+platforms = ["linux", "macos"]
+
+[[startup]]
+command = ["python3", "notify.py"]
+
+# GitLab pipeline poller: started with the server, re-checked on events so it
+# heals itself after `herdr plugin link` or a crash. `stop` keeps it stopped.
+[[startup]]
+command = ["python3", "poller_ctl.py", "ensure"]
+
+[[events]]
+on = "workspace.focused"
+command = ["python3", "poller_ctl.py", "ensure"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["python3", "notify.py"]
+
+[[events]]
+on = "pane.closed"
+command = ["python3", "notify.py"]
+
+[[events]]
+on = "pane.exited"
+command = ["python3", "notify.py"]
+
+[[actions]]
+id = "send"
+title = "Send agent status to Presto"
+command = ["python3", "notify.py"]
+
+[[actions]]
+id = "pipelines-start"
+title = "Start GitLab pipeline poller"
+command = ["python3", "poller_ctl.py", "start"]
+
+[[actions]]
+id = "pipelines-stop"
+title = "Stop GitLab pipeline poller"
+command = ["python3", "poller_ctl.py", "stop"]
+
+[[actions]]
+id = "pipelines-restart"
+title = "Restart GitLab pipeline poller"
+command = ["python3", "poller_ctl.py", "restart"]
+
+[[actions]]
+id = "pipelines-status"
+title = "GitLab pipeline poller status"
+command = ["python3", "poller_ctl.py", "status"]
