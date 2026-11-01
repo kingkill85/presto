@@ -56,7 +56,8 @@ A restart loses the agent status until the next poller round (≤30 s).
 - `hamster.py`: main loop (touch, status overrides, poses, drawing, LEDs).
   `messy/`: `gfx` (screen, palette, helpers), `sprites` (characters),
   `actors` (state machines and `Pose`), `directors` (`Ball`, `Visit`) and
-  `duo` (`Duo`, scenes for two), `scene` (main page, particles), `pages`
+  `duo` (`Duo`, scenes for two), `scene` (main page), `seasons` (meadow,
+  seasonal particles, holidays), `particles`, `pages`
   (other pages), `herdr` (UDP status), `home` (Home Assistant), `sound`,
   `leds`, `prefs`.
 - Five swipe pages (`pages.VIEWS`): scene, agents, pipelines, home, settings.
@@ -78,7 +79,7 @@ A restart loses the agent status until the next poller round (≤30 s).
   Right of the clock: one icon per agent.
 - Movement is time based (`k` = frame time / 66 ms), target ~30 fps. Use
   `time.ticks_diff`/`ticks_add` for times, `ticks_ms` wraps after ~12 days.
-- Particles age on every page (`scene.update_particles`), but are only drawn
+- Particles age on every page (`particles.update`), but are only drawn
   on the scene.
 - Beeps come from per-item changes (`herdr._watch_agents`, `_watch_pipes`), not from the combined status, so one agent or pipeline finishing while another still runs is heard.
 - Settings (`leds` = status LEDs, `anim_leds` = mood and scene lights, `sounds`, `anim`, `music`) are in `settings.json` on the device.

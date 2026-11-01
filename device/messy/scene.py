@@ -1,5 +1,5 @@
-# The main page: sky and weather, the big clock, the meadow, the hamster wheel,
-# both characters and the little particles flying around.
+# The main page: sky and weather, the big clock, the meadow (seasons.py), the
+# hamster wheel, both characters and the particles flying around.
 
 import math
 import network
@@ -7,12 +7,11 @@ import ntptime
 import time
 import tz
 
-from messy import herdr, home
-from messy.gfx import (ALERT_PEN, ANGER, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, CRUMB_PEN, DOT_PEN, EXCL, FAIL_PEN,
-                       FUR_PEN, GEAR_A, GEAR_B, HEART, HEART_PEN, HEIGHT, IDLE_PEN, MANUAL_PEN, NOTE, PLAY,
-                       RING_SMALL, SEED_ART, SEED_PEN, SHADOW, SLASH, SNOW_SHADOW, SPARK, SPARK_PEN, SPARK_X,
-                       STAND_PEN, TICK, TICK_PEN, WHEEL_DARK_PEN, WHEEL_PEN, WIDTH, WOOL_PEN, ZED, ZED_PEN, blit,
-                       display, draw_alert_sign, draw_art, draw_bubble, draw_degrees, pen, runs_from_grid)
+from messy import herdr, home, particles, seasons
+from messy.gfx import (ALERT_PEN, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, DOT_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
+                       GEAR_B, IDLE_PEN, MANUAL_PEN, PLAY, RING_SMALL, SEED_ART, SEED_PEN, SLASH, SPARK, SPARK_X,
+                       STAND_PEN, TICK, TICK_PEN, WHEEL_DARK_PEN, WHEEL_PEN, WIDTH, display, draw_alert_sign,
+                       draw_art, draw_bubble, draw_degrees, pen)
 from messy.sprites import (BASE_Y, C_BASE_Y, CS, GROUND, HOME_X, S, draw_clawd, draw_hamster, draw_leaf_umbrella,
                            draw_umbrella)
 
@@ -195,91 +194,15 @@ def draw_clock(now):
     display.text(date, max(left, (WIDTH - dw) // 2), 12, -1, 2)
 
 
-# --- meadow ------------------------------------------------------------------------
-# A strip of pixel meadow (4 px blocks) that follows the seasons: spring
-# flowers, lush summer grass, autumn leaves, frosty winter grass, and covered
-# in snow when it snows. Grass on top, soil with pebbles below.
+# --- ground ------------------------------------------------------------------------
 
-FLOOR_PENS = {
-    "T": pen((0, 228, 54)), "G": pen((0, 168, 81)), "g": pen((0, 112, 62)),         # spring/summer grass
-    "A": pen((120, 160, 60)), "B": pen((86, 128, 54)), "b": pen((62, 96, 46)),       # autumn grass
-    "X": pen((128, 140, 104)), "Y": pen((98, 112, 86)), "y": pen((74, 88, 70)),      # winter grass
-    "F": pen((206, 220, 232)),                                                       # frost
-    "k": pen((255, 119, 168)), "v": pen((255, 236, 39)), "f": pen((255, 241, 232)),  # flowers
-    "o": pen((255, 163, 0)), "r": pen((200, 60, 40)), "n": pen((171, 82, 54)),       # leaves
-    "s": pen((122, 74, 50)), "S": pen((92, 54, 40)),                                 # soil
-    "p": pen((95, 87, 79)), "P": pen((158, 148, 136)),                               # pebbles
-    "W": pen((240, 242, 250)), "w": pen((184, 194, 220)),                            # snow
-}
-FLOOR_ROWS = (HEIGHT - GROUND) // 4 + 2  # one row of tufts above the ground line
-SEASON_GRASS = {"spring": "TGg", "summer": "TGg", "autumn": "ABb", "winter": "XYy"}
-_floors = {}
-
-
-def season():
-    m = tz.localtime()[1] if clock_synced else 6
-    return ("winter", "winter", "spring", "spring", "spring", "summer", "summer", "summer",
-            "autumn", "autumn", "autumn", "winter")[m - 1]
-
-
-def floor_runs(snow, sea):
-    key = (snow, sea)
-    runs = _floors.get(key)
-    if runs is not None:
-        return runs
-    cols = WIDTH // 4
-    seed = [12345]
-
-    def rnd(n):  # same meadow every time
-        seed[0] = (seed[0] * 1103515245 + 12345) & 0x7FFFFFFF
-        return seed[0] % n
-
-    light, mid, dark = SEASON_GRASS[sea]
-    g = [["."] * cols for _ in range(FLOOR_ROWS)]
-    for c in range(cols):
-        if snow:
-            if rnd(5) == 0:
-                g[0][c] = "W"
-            g[1][c] = "W" if rnd(4) else "w"
-            g[2][c] = "w" if rnd(3) == 0 else "W"
-        else:
-            if rnd(3 if sea == "summer" else 5) == 0:
-                g[0][c] = "F" if sea == "winter" and rnd(2) else light
-            g[1][c] = light if rnd(4) == 0 else mid
-            g[2][c] = dark if rnd(3) == 0 else mid
-        g[3][c] = "S" if rnd(3) else dark
-        for r in range(4, FLOOR_ROWS):
-            g[r][c] = "S" if rnd(6) == 0 else "s"
-    if not snow:
-        if sea in ("spring", "summer"):  # flowers on little stems
-            for _ in range(cols // (4 if sea == "spring" else 8)):
-                c = rnd(cols)
-                g[0][c] = "kvf"[rnd(3)] if sea == "spring" else "v"
-                g[1][c] = dark
-        elif sea == "autumn":  # fallen leaves
-            for _ in range(cols // 3):
-                c, r = rnd(cols), 1 + rnd(2)
-                g[r][c] = "orn"[rnd(3)]
-        else:  # frost on the grass
-            for _ in range(cols // 4):
-                g[1][rnd(cols)] = "F"
-    for _ in range(cols // 4):  # pebbles
-        c, r = rnd(cols - 2), 4 + rnd(FLOOR_ROWS - 5)
-        g[r][c] = g[r][c + 1] = "p"
-        g[r][c] = "P"
-    runs = runs_from_grid(g, FLOOR_PENS, 0)
-    _floors[key] = runs
-    return runs
-
-
-def draw_ground(sky, shadows):
+def draw_ground(now, sky, shadows):
     """Clear to the sky colour, draw the meadow and a shadow per (x, width)."""
     display.set_pen(sky)
     display.clear()
-    snow = home.weather()[0] in home.SNOW
-    blit(floor_runs(snow, season()), 0, GROUND - 4, 4)
+    shadow = seasons.draw_meadow(now, home.weather()[0] in home.SNOW)
     # shadows shrink while their owner is in the air
-    display.set_pen(SNOW_SHADOW if snow else SHADOW)
+    display.set_pen(shadow)
     for cx, w in shadows:
         w = max(4, int(w))
         display.rectangle(int(cx) - w // 2, GROUND, w, 4)
@@ -385,57 +308,6 @@ def draw_pipe_bar(now):
         y += 14
 
 
-# --- particles -------------------------------------------------------------------------
-# [kind, x, y, vx, vy, life]; speeds and life are per 66 ms. They age on every
-# page, otherwise they would pile up while another page is shown.
-
-particles = []
-
-
-def spawn(kind, x, y, vx, vy, life):
-    particles.append([kind, x, y, vx, vy, life])
-
-
-def update_particles(k):
-    global particles
-    for p in particles:
-        p[1] += p[3] * k
-        p[2] += p[4] * k
-        p[5] -= k
-        if p[0] == "crumb":  # falls and stays on the ground
-            p[4] += 0.4 * k
-            if p[2] >= GROUND - 3:
-                p[2], p[3], p[4] = GROUND - 3, 0, 0
-        elif p[0] == "zed":  # sways
-            p[3] = 0.4 * math.sin(p[5] / 6)
-    particles = [p for p in particles if p[5] > 0]
-
-
-def draw_particles():
-    for kind, x, y, _, _, life in particles:
-        if kind == "crumb":
-            display.set_pen(CRUMB_PEN)
-            display.rectangle(int(x), int(y), 3, 3)
-        elif kind == "heart":
-            draw_art(HEART, x, y, 3, HEART_PEN)
-        elif kind == "breath":
-            size = 3 if life > 12 else 4 if life > 6 else 5
-            display.set_pen(WOOL_PEN if life > 8 else ZED_PEN)
-            display.rectangle(int(x), int(y), size, size)
-        elif kind == "anger":
-            draw_art(ANGER, x, y, 3, FAIL_PEN)
-        elif kind == "note":
-            draw_art(NOTE, x, y, 3, (ALERT_PEN, TICK_PEN, MANUAL_PEN, HEART_PEN)[int(x) % 4])
-        elif kind == "smoke":
-            display.set_pen(WHEEL_DARK_PEN if life > 12 else STAND_PEN)
-            size = 6 if life > 15 else 4
-            display.rectangle(int(x), int(y), size, size)
-        elif kind == "spark":
-            draw_art(SPARK, x, y, 3, SPARK_PEN)
-        elif kind == "zed":
-            draw_art(ZED, x, y, 3 if life > 25 else 2, ZED_PEN)
-
-
 # --- the whole scene -------------------------------------------------------------------
 
 def draw(now, messy, hp, clawd, cp, director, wear):
@@ -444,7 +316,7 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     extras."""
     x, c_x = messy.x, clawd.x
     jump, c_jump = hp.jump, cp.jump
-    draw_ground(sky_background(now), ((x + 8 * S, 12 * S - jump), (c_x + 8 * CS, 14 * CS - c_jump)))
+    draw_ground(now, sky_background(now), ((x + 8 * S, 12 * S - jump), (c_x + 8 * CS, 14 * CS - c_jump)))
     draw_sky(now)
     draw_clock(now)
     draw_weather_line()
@@ -498,4 +370,4 @@ def draw(now, messy, hp, clawd, cp, director, wear):
 
     if director:
         director.draw(now)
-    draw_particles()
+    particles.draw()

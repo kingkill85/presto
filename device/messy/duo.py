@@ -12,7 +12,7 @@ from messy.directors import arc, walk_to
 from messy.gfx import (ALERT_PEN, CLAWD_PEN, FUR_PEN, SEED_ART, SEED_PEN, STAND_PEN, WHEEL_PEN, WIDTH, display,
                        draw_alert_sign, draw_art)
 from messy.prefs import settings
-from messy.scene import spawn
+from messy.particles import spawn
 from messy.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
 
 KINDS = (("fight", 3), ("chase", 3), ("dance", 2), ("snack", 2), ("leap", 2))  # (kind, weight)

@@ -31,7 +31,8 @@
 #   sprites    Messy, Clawd and the pirate
 #   actors     their state machines and poses
 #   directors  ball game and pirate visit; duo: scenes for two
-#   scene      sky, clock, meadow, wheel, particles: the main page
+#   scene      sky, clock, wheel, characters: the main page
+#   seasons    meadow, seasonal particles, holidays; particles: all of them
 #   pages      the other pages
 #   herdr      agent and pipeline status from the PC; home: Home Assistant
 #   sound, leds, prefs
@@ -39,7 +40,7 @@
 import network
 import time
 
-from messy import herdr, home, leds, pages, scene, sound
+from messy import herdr, home, leds, pages, particles, scene, seasons, sound
 from messy.actors import DIRECTED, FREE, Clawd, Messy
 from messy.directors import Ball, Visit, visit_due
 from messy.duo import Duo
@@ -244,9 +245,9 @@ def pose(now, k):
         cp.arms = (True, cp.arms[1] if clawd.state == "wave" else False)
     if breath and view == "scene":
         if frame % 75 == 0 and messy.state not in ("event", "duo"):
-            scene.spawn("breath", messy.x + 9 * S, BASE_Y + 7 * S - hp.jump, 0.8, -0.3, 18)
+            particles.spawn("breath", messy.x + 9 * S, BASE_Y + 7 * S - hp.jump, 0.8, -0.3, 18)
         if frame % 75 == 37 and clawd.state not in ("event", "duo", "work"):
-            scene.spawn("breath", clawd.x + 15 * CS, C_BASE_Y + 3 * CS - cp.jump, 0.7, -0.3, 18)
+            particles.spawn("breath", clawd.x + 15 * CS, C_BASE_Y + 3 * CS - cp.jump, 0.7, -0.3, 18)
     return wear
 
 
@@ -292,9 +293,10 @@ while True:
     follow_agents(now)
 
     wear = pose(now, k)
-    scene.update_particles(k)
+    particles.update(k)
 
     if view == "scene":
+        seasons.spawn(now, k)
         scene.draw(now, messy, hp, clawd, cp, director, wear)
         pages.draw_page_dots("scene")
         pages.forget()

@@ -21,8 +21,6 @@ def pen(rgb):
 # --- palette (PICO-8) ---------------------------------------------------------
 
 BACKGROUND = pen((29, 43, 83))
-SHADOW = pen((0, 84, 48))       # on grass
-SNOW_SHADOW = pen((150, 162, 196))
 COLOURS = {  # the hamster
     "#": pen((255, 163, 0)),    # fur
     "o": pen((255, 241, 232)),  # belly and face

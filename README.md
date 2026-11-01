@@ -40,7 +40,11 @@ A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
   from `guybrush.rtttl` (RTTTL ringtone format, git-ignored) on the Presto.
 - **Background:** a big pixel clock with weekday and date (NTP), the current
   weather below it, a weather symbol in the corner, a sky colour that follows
-  the daylight and a meadow that changes with the seasons.
+  the daylight and a meadow that changes with the seasons: tulips and
+  petals in spring, poppies, a butterfly and fireflies in summer, mushrooms
+  and falling leaves in autumn, snow and a frozen puddle in winter. Eggs at
+  Easter, a pumpkin at Halloween, a little tree from Advent to Epiphany and
+  fireworks on New Year's Eve.
 - **Mood LEDs** on the back follow what's going on.
 
 Swipe left or right through five pages:

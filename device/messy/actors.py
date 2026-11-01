@@ -11,7 +11,8 @@ import random
 import time
 
 from messy import sound, sprites
-from messy.scene import WHEEL_CX, WHEEL_CY, spawn
+from messy.particles import spawn
+from messy.scene import WHEEL_CX, WHEEL_CY
 from messy.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, HOME_X, S
 
 # Walk and run cycles: (foot lifted, hop in screen pixels)
