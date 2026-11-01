@@ -30,16 +30,21 @@ The other apps the launcher shows are Pimoroni's examples from the firmware.
 A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
 
 - **Messy** (the hamster) idles, sniffs, looks around, walks, eats seeds,
-  washes and sleeps. **Clawd** waves, thinks and walks. Tap either one: it
-  cheers (or wakes up) and shows its name.
+  washes, digs for seeds, sneezes, sleeps and stretches when he wakes up.
+  **Clawd** waves, thinks, walks, drinks coffee and juggles. Tap either one:
+  it cheers (or wakes up) and shows its name.
 - **Together** they play catch and act out little scenes: a fight in a dust
   cloud that ends in a hug, a chase around the world, a dance party, sharing a
-  snack, leapfrog.
+  snack, leapfrog, hide and seek, and one for the season (a snowman, kicking
+  leaves, watering a flower, ice cream).
+- **Visitors:** a bird that sometimes lands on Clawd's head, and now and then
+  a snail crawling across the meadow.
 - **Guybrush** (Monkey Island 2 style fan art) walks in every few minutes
   while neither of them is working, shouts "BUH!" and scares both off. He brings a jingle, or your own melody
   from `guybrush.rtttl` (RTTTL ringtone format, git-ignored) on the Presto.
-- **Background:** a big pixel clock with weekday and date (NTP), the current
-  weather below it, a weather symbol in the corner, a sky colour that follows
+- **Background:** a big pixel clock with weekday and date (NTP), the next
+  appointment of the day below it, the weather symbol top left, temperature
+  and weather top right, a sky colour that follows
   the daylight and a meadow that changes with the seasons: tulips and
   petals in spring, poppies, a butterfly and fireflies in summer, mushrooms
   and falling leaves in autumn, snow and a frozen puddle in winter. Eggs at
@@ -47,13 +52,18 @@ A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
   fireworks on New Year's Eve.
 - **Mood LEDs** on the back follow what's going on.
 
-Swipe left or right through five pages:
+- **Daily note:** appointments and tasks from today's note in Obsidian (sent by
+  the pipeline poller, see `herdr-plugin/daynote.py`). 10 and 2 minutes before
+  an appointment Guybrush walks in, turns to you and reminds you.
+
+Swipe left or right through six pages:
 
 1. the scene
-2. **AGENTS**: the coding agents in Herdr and their status
-3. **PIPELINES**: CI pipelines of the active Herdr spaces
-4. **HOME**: Home Assistant weather, rooms, lights, heating, low batteries
-5. **SETTINGS**: switch status LEDs, animation lights, sounds, animation sounds and music on or off (saved in
+2. **HEUTE**: today's appointments and tasks from the daily note
+3. **AGENTS**: the coding agents in Herdr and their status
+4. **PIPELINES**: CI pipelines of the active Herdr spaces
+5. **HOME**: Home Assistant weather, rooms, lights, heating, low batteries
+6. **SETTINGS**: switch status LEDs, animation lights, sounds, animation sounds and music on or off (saved in
    `settings.json` on the Presto)
 
 ## Home Assistant

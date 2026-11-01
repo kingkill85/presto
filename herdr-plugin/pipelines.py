@@ -24,6 +24,8 @@ by itself when the Herdr server is gone. glab/gh must be logged in.
   python3 pipelines.py                 # loop until Herdr exits
   python3 pipelines.py --once          # send once and print the payload
   python3 pipelines.py --target 192.168.1.50
+
+It also sends today's daily note (daynote.py): appointments and tasks.
 """
 
 import argparse
@@ -335,11 +337,22 @@ def agent_payload():
     return json.dumps(notify.agent_status(), separators=(",", ":")).encode()
 
 
+def day_payload(setting):
+    """Today's daily note, pulled from git first now and then."""
+    import daynote  # same directory
+    folder = daynote.find_folder(setting or None)
+    daynote.pull(folder)
+    return json.dumps(daynote.collect(folder), separators=(",", ":")).encode()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--target", default="255.255.255.255", help="Presto IP, default is broadcast")
     ap.add_argument("--interval", type=int, default=30)
     ap.add_argument("--pinned", help='JSON list like [{"host":..,"project":..,"ref":"develop"}], "[]" for none')
+    ap.add_argument("--daynotes", default="",
+                    help="folder of the daily notes inside the Obsidian vault or an absolute path, "
+                         "default: found in the vaults; off: don't send")
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
     pinned = json.loads(args.pinned) if args.pinned else DEFAULT_PINNED
@@ -354,7 +367,8 @@ def main():
                 # tell the Presto that nothing is going on any more, so Clawd
                 # and Messy don't keep working after Herdr was closed
                 for msg in ({"status": "none", "agents": 0, "count": 0, "title": "", "list": []},
-                            {"type": "pipelines", "status": "none", "items": []}):
+                            {"type": "pipelines", "status": "none", "items": []},
+                            {"type": "day", "date": None, "note": 0, "events": [], "tasks": []}):
                     for _ in range(3):
                         sock.sendto(json.dumps(msg).encode(), (args.target, PORT))
                         time.sleep(0.05)
@@ -369,6 +383,14 @@ def main():
                 sock.sendto(agent_payload(), (args.target, PORT))
             except Exception as e:
                 print(f"agent status: {e}", flush=True)
+            if args.daynotes != "off":
+                try:
+                    day = day_payload(args.daynotes)
+                    sock.sendto(day, (args.target, PORT))
+                    if args.once:
+                        print(day.decode())
+                except Exception as e:
+                    print(f"daily note: {e}", flush=True)
             if args.once:
                 print(payload.decode())
             else:

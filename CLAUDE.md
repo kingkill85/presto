@@ -57,10 +57,11 @@ A restart loses the agent status until the next poller round (≤30 s).
   `messy/`: `gfx` (screen, palette, helpers), `sprites` (characters),
   `actors` (state machines and `Pose`), `directors` (`Ball`, `Visit`) and
   `duo` (`Duo`, scenes for two), `scene` (main page), `seasons` (meadow,
-  seasonal particles, holidays), `particles`, `pages`
-  (other pages), `herdr` (UDP status), `home` (Home Assistant), `sound`,
+  seasonal particles, holidays), `particles`, `critters` (bird, snail),
+  `reminder` (Guybrush before an appointment), `pages`
+  (other pages), `herdr` (UDP status and the daily note), `home` (Home Assistant), `sound`,
   `leds`, `prefs`.
-- Five swipe pages (`pages.VIEWS`): scene, agents, pipelines, home, settings.
+- Six swipe pages (`pages.VIEWS`): scene, today, agents, pipelines, home, settings.
   The pages other than the scene are only redrawn when their key (data plus
   a blink tick) changes, and `presto.update()` is skipped otherwise.
 - Messy and Clawd are `Actor`s with a state machine (`start`, random `pick`).
@@ -86,6 +87,13 @@ A restart loses the agent status until the next poller round (≤30 s).
   Character squeaks (`sound.CHARACTER_SOUNDS`) are deliberately off; `sounds` only
   covers pipeline and Claude beeps, `anim` the scene sounds (fight).
 
+Style: everything is chunky pixel art on a 4 px grid (Messy 4 px, Clawd 5 px
+pixels). New art, props and particles use 4 px blocks (`gfx.draw_colour_art`,
+`gfx.snap`) and move in 4 px steps; leave out details too small for that.
+
+MicroPython gaps that bit us: no `[::-1]` (use `reversed`), `time.mktime`
+takes 8 values. Test on the device, not only in CPython.
+
 Performance on the Presto (measured, keep in mind when adding things):
 
 - Building a dict with a few hundred entries takes ~100 ms. Sprites are built
@@ -107,6 +115,12 @@ Performance on the Presto (measured, keep in mind when adding things):
   polls the CI of the active Herdr spaces (GitLab via `glab api`, GitHub via
   `gh api`) every 30 s and sends it on the same port with
   `"type": "pipelines"`, plus the agent status again.
+- `daynote.py` (called by the poller) reads today's note `YYYY-MM-DD.md` from
+  the Obsidian vault (found via Obsidian's `obsidian.json`, so it works on every
+  computer; setting `daynotes` in `pipelines.json` overrides it), `git pull
+  --ff-only`s the vault every 5 min and sends `"type": "day"` with appointments
+  (`## Termine`, a time like `(13:00)`) and tasks (`## Aufgaben`). No note means
+  no work day (weekend, holiday).
 
 ## Firmware
 

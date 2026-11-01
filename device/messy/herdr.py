@@ -1,8 +1,9 @@
-# Agent and pipeline status from Herdr on the PC.
+# Agent and pipeline status from Herdr on the PC, and today's daily note.
 #
 # herdr-plugin/notify.py sends {"status": "working", "list": [...]} to UDP
 # port 47474 on every agent change, and herdr-plugin/pipelines.py sends
-# {"type": "pipelines", ...} every 30 s plus the agent status again. When Herdr
+# {"type": "pipelines", ...} and {"type": "day", ...} (herdr-plugin/daynote.py)
+# every 30 s plus the agent status again. When Herdr
 # closes the poller says goodbye ("none"); if the PC just goes away the status
 # fades out after a few minutes without updates.
 
@@ -22,6 +23,8 @@ agent_rx = 0
 pipe_status = None  # combined: running, failed, success
 pipe_items = []  # [{"w": space, "n": MR or branch, "s": status, ...}, ...]
 pipe_rx = 0
+day = None  # today's daily note: {"date", "note": 0/1, "events": [{"t", "n", "x"}], "tasks": [{"n", "x"}]}
+day_rx = 0
 
 # Beeps come from changes of single agents and pipelines, not from the combined
 # status, so one finishing while another keeps running is heard too. The main
@@ -97,7 +100,7 @@ def _track_pipes(items):
 
 def poll(now):
     """Read every waiting packet without blocking."""
-    global agent_status, agent_list, agent_rx, pipe_status, pipe_items, pipe_rx, _sock
+    global agent_status, agent_list, agent_rx, pipe_status, pipe_items, pipe_rx, day, day_rx, _sock
     if _sock is None:
         if not _wlan.isconnected():
             return
@@ -115,6 +118,10 @@ def poll(now):
             break
         try:
             msg = json.loads(data)
+            if msg.get("type") == "day":
+                day = msg if msg.get("date") else None  # no date: Herdr closed
+                day_rx = now
+                continue
             if msg.get("type") == "pipelines":
                 pipe_status = msg["status"] if msg["status"] != "none" else None
                 if pipe_status is None:  # Herdr closed
@@ -133,10 +140,30 @@ def poll(now):
     if agent_status and time.ticks_diff(now, agent_rx) > AGENT_STALE_MS:
         agent_status = None
         agent_list = []
+    if day and time.ticks_diff(now, day_rx) > PIPE_STALE_MS:
+        day = None
     if pipe_status and time.ticks_diff(now, pipe_rx) > PIPE_STALE_MS:
         pipe_status = None
         pipe_items = []
         recent_pipes.clear()
+
+
+def next_event(t):
+    """The appointment that comes next (or started less than 15 min ago) and
+    isn't ticked off, for the local time t (None: the first open one)."""
+    if not day or not day.get("note"):
+        return None
+    minute = t[3] * 60 + t[4] - 15 if t else -1
+    for e in day["events"]:
+        hh, mm = e["t"].split(":")
+        if not e.get("x") and int(hh) * 60 + int(mm) >= minute:
+            return e
+    return None
+
+
+def minutes_until(e, t):
+    hh, mm = e["t"].split(":")
+    return int(hh) * 60 + int(mm) - (t[3] * 60 + t[4])
 
 
 def pipes_fresh(now):

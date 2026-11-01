@@ -13,7 +13,11 @@ pipelines.json in $HERDR_PLUGIN_CONFIG_DIR, for example:
 
   {"interval": 30, "target": "255.255.255.255", "enabled": true,
    "pinned": [{"host": "gitlab.example.com", "project": "group/project",
-               "ref": "develop"}]}
+               "ref": "develop"}],
+   "daynotes": "05-tagebuch"}
+
+"daynotes" is optional (see daynote.py): a folder inside the Obsidian vault,
+an absolute path, or "off".
 """
 
 import json
@@ -56,7 +60,7 @@ def start():
         return "already running"
     cfg = settings()
     cmd = [sys.executable, os.path.join(HERE, "pipelines.py")]
-    for key in ("target", "interval"):
+    for key in ("target", "interval", "daynotes"):
         if key in cfg:
             cmd += [f"--{key}", str(cfg[key])]
     if "pinned" in cfg:

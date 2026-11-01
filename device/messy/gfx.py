@@ -142,6 +142,24 @@ def draw_art(art, x, y, s, colour):
         display.rectangle(x + c * s, y + r * s, n * s, s)
 
 
+def snap(v):
+    """Down to the 4 px grid everything chunky lives on."""
+    return int(v) // 4 * 4
+
+
+_colour_art = {}
+
+
+def draw_colour_art(art, pens, x, y, s=4):
+    """Many-coloured pixel art (one pen per character, "." empty) on the 4 px
+    grid. Pass module level art and pens only: they are cached by their id."""
+    key = (id(art), id(pens))
+    runs = _colour_art.get(key)
+    if runs is None:
+        runs = _colour_art[key] = runs_from_grid(art, pens, 0)
+    blit(runs, snap(x), snap(y), s)
+
+
 def draw_bubble(text, x, y):
     """Speech bubble with a little tail."""
     w = display.measure_text(text, 2)

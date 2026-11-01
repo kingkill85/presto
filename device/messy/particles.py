@@ -1,6 +1,6 @@
 # Little things flying around: hearts, Zs, crumbs, smoke, sparks, notes,
-# breath clouds, and the seasonal ones (petals, leaves, a butterfly,
-# fireflies, frost glints, fireworks).
+# breath clouds, dirt, fluff, steam, water drops, and the seasonal ones
+# (petals, leaves, a butterfly, fireflies, frost glints, fireworks).
 #
 # [kind, x, y, vx, vy, life, colour]; speeds and life are per 66 ms. They age
 # on every page, otherwise they would pile up while another page is shown,
@@ -9,8 +9,13 @@
 import math
 
 from messy.gfx import (ALERT_PEN, ANGER, CRUMB_PEN, EYE_PEN, FAIL_PEN, HEART, HEART_PEN, MANUAL_PEN, NOTE, SPARK,
-                       SPARK_PEN, STAND_PEN, TICK_PEN, WHEEL_DARK_PEN, WOOL_PEN, ZED, ZED_PEN, display, draw_art)
+                       SPARK_PEN, STAND_PEN, TICK_PEN, WHEEL_DARK_PEN, WOOL_PEN, ZED, ZED_PEN, display, draw_art, pen)
 from messy.sprites import GROUND
+
+DIRT_PEN = pen((122, 74, 50))
+DROP_PEN = pen((90, 160, 240))
+CHUNKY = {"petal": None, "leaf": None, "firefly": None, "pop": None, "dirt": DIRT_PEN, "drop": DROP_PEN,
+          "fluff": WOOL_PEN, "steam": None}  # kind -> pen (None: its own colour, steam fades)
 
 particles = []
 
@@ -47,7 +52,8 @@ def update(k):
                 p[2], p[3], p[4] = GROUND - 2, 0, 0
                 p[5] = min(p[5], 40)
             else:
-                p[3] = 0.7 * math.sin(p[5] / 6)
+                p[3] = 0.7 * math.sin(p[5] / 6) if p[4] > 0 else p[3]
+                p[4] = min(p[4] + 0.15 * k, 0.7)  # kicked up ones come down again
         elif kind == "butterfly":
             p[4] = 0.6 * math.sin(p[5] / 9)
         elif kind == "firefly":
@@ -55,6 +61,14 @@ def update(k):
             p[4] = 0.25 * math.sin(p[5] / 11)
         elif kind == "pop":  # firework spark: a little gravity
             p[4] += 0.06 * k
+        elif kind == "dirt" or kind == "drop":  # thrown up, falls back
+            p[4] += 0.35 * k
+            if p[2] >= GROUND:
+                p[5] = 0
+        elif kind == "steam":
+            p[3] = 0.3 * math.sin(p[5] / 3)
+        elif kind == "fluff":
+            p[4] += 0.03 * k
     particles = [p for p in particles if p[5] > 0]
 
 
@@ -82,29 +96,25 @@ def draw():
             draw_art(SPARK, x, y, 3, SPARK_PEN)
         elif kind == "zed":
             draw_art(ZED, x, y, 3 if life > 25 else 2, ZED_PEN)
-        elif kind == "petal" or kind == "leaf":
-            display.set_pen(colour)
-            display.rectangle(x, y, 4 if (int(life) // 4) % 2 else 2, 2 if kind == "petal" else 3)
+        elif kind in CHUNKY:  # one 4 px block on the grid
+            if kind == "firefly" and not (int(life) // 5) % 3:
+                continue  # blinks
+            display.set_pen(colour or CHUNKY[kind] or (ZED_PEN if life > 10 else STAND_PEN))
+            display.rectangle(x // 4 * 4, y // 4 * 4, 4, 4)
         elif kind == "butterfly":
+            gx, gy = x // 4 * 4, y // 4 * 4
             display.set_pen(colour)
             if (int(life) // 2) % 2:  # wings open
-                display.rectangle(x - 4, y - 2, 4, 4)
-                display.rectangle(x + 2, y - 2, 4, 4)
+                display.rectangle(gx - 4, gy - 4, 4, 4)
+                display.rectangle(gx + 4, gy - 4, 4, 4)
             else:  # wings up
-                display.rectangle(x - 1, y - 6, 4, 4)
+                display.rectangle(gx, gy - 8, 4, 4)
             display.set_pen(EYE_PEN)
-            display.rectangle(x, y - 2, 2, 5)
-        elif kind == "firefly":
-            if (int(life) // 5) % 3:
-                display.set_pen(colour)
-                display.rectangle(x, y, 2, 2)
+            display.rectangle(gx, gy - 4, 4, 8)
         elif kind == "glint":  # a twinkle on the frosty ground
+            gx, gy = x // 4 * 4, y // 4 * 4
             display.set_pen(WOOL_PEN)
+            display.rectangle(gx, gy, 4, 4)
             if life > 4:
-                display.rectangle(x - 3, y, 7, 1)
-                display.rectangle(x, y - 3, 1, 7)
-            else:
-                display.rectangle(x - 1, y - 1, 3, 3)
-        elif kind == "pop":
-            display.set_pen(colour)
-            display.rectangle(x, y, 3, 3)
+                display.rectangle(gx - 4, gy, 12, 4)
+                display.rectangle(gx, gy - 4, 4, 12)

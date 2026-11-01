@@ -12,8 +12,8 @@ import time
 from messy import sound
 from messy.actors import RUN, WALK
 from messy.gfx import BALL_PEN, HEART_PEN, WIDTH, display, draw_bubble
-from messy.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_W, GB_WALK, GB_Y, GROUND, HOME_X, S,
-                           draw_guybrush)
+from messy.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_W, GB_Y, GROUND, HOME_X, S, draw_guybrush,
+                           walk_frame)
 
 
 def walk_to(pos, target, speed, k):
@@ -222,16 +222,17 @@ class Visit:
         ph, et = self.phase, time.ticks_diff(now, self.t0)
         if ph not in ("enter", "scare", "flee", "laugh", "leave"):
             return
-        legs, arms, bob = "stand", "down", 0
+        legs, arms, bob, hem, hair, mouth = "stand", "down", 0, 0, 0, 0
         if ph in ("enter", "leave"):
-            legs, arms, bob = GB_WALK[(et // 130) % 4]
+            legs, arms, bob, hem, hair = walk_frame(et)
         elif ph == "scare":
-            arms = "up"
+            arms, mouth = "up", 2  # shouting
             bob = -3 if et < 150 else 0
+            hair = 1 if et < 300 else 0
         elif ph == "laugh":
-            bob = -2 if (et // 200) % 2 == 0 else 0  # shoulders shake
-        mouth = ph == "scare" or (ph == "laugh" and (et // 200) % 2 == 0)
-        draw_guybrush(self.gx, flip=ph == "leave", legs=legs, arms=arms, mouth=mouth, bob=bob)
+            beat = (et // 200) % 2 == 0
+            bob, mouth = (-2, 2) if beat else (0, 1)  # shoulders shake, mouth wide open
+        draw_guybrush(self.gx, flip=ph == "leave", legs=legs, arms=arms, mouth=mouth, bob=bob, hem=hem, hair=hair)
         if ph == "scare":
             draw_bubble("BUH!", int(self.gx) + 50, GB_Y - 30)
         elif ph == "laugh":

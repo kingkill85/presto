@@ -272,16 +272,46 @@ GB_BODY = (
     "...CLcccc.ccccC.",
     "..CLccc....cccC.",
 )
-# Walk cycle: a (far leg back), pass, b (far leg forward), pass
+# The same pirate facing us (when he talks to you), legs as in "stand"
+GB_FRONT = (
+    ".....yyHHyy.....",
+    "....yyHHHHyy....",
+    "...yyyyyyyyyy...",
+    "...yYyyyyyyYy...",
+    "...YykkkkkkyY...",
+    "...YkkkkkkkkY...",
+    "...YkwekkewkY...",
+    "...ykkkkkkkky...",
+    "...yKkkKKkkKy...",
+    "...yzkkkkkkzy...",
+    "....zzkkkkzz....",
+    "....zzzzzzzz....",
+    ".....zzzzzz.....",
+    "......kkkk......",
+    "....cCwwwwCc....",
+    "...ccLwwwwLcc...",
+    "..cccLcwwcLccc..",
+    "..cccLcgcbLccc..",
+    "..cccLcbgcLccc..",
+    "..cccLbcgcLccc..",
+    "..ccbLccgcLccc..",
+    "..kcbLccccLcck..",
+    "...bbbbbgbbbbb..",
+    "...cLccccccLcc..",
+    "...cLccc.cccLc..",
+)
+GB_FRONT_MOUTHS = ((), ((7, 10, "e"), (8, 10, "e")), ((7, 10, "e"), (8, 10, "e"), (7, 11, "e"), (8, 11, "e")))
+
+# Leg poses, 7 rows below the coat; n is the far leg, N the near one, d boots.
+# Walking lifts one foot after the other; the legs stay side by side and one
+# foot is always on the ground.
 GB_LEGS = {
     "stand": (".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....",
               ".....dd..dd.....", "....ddd..ddd....", "....dddd.dddd..."),
-    "a": ("......nNN.......", ".....nn..NN.....", "....nn....NN....", "...nn......NN...",
-          "...dd.......dd..", "..ddd.......ddd.", "..dddd......dddd"),
-    "pass": ("......nNN.......", "......nNN.......", "......nNN.......", "......nNN.......",
-             "......ddd.......", ".....dddd.......", ".....ddddd......"),
-    "b": ("......NNn.......", ".....NN..nn.....", "....NN....nn....", "...NN......nn...",
-          "...dd.......dd..", "..ddd.......ddd.", "..dddd......dddd"),
+    "far": (".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....", ".....dd..NN.....",
+            "....ddd..dd.....", "....dddd.ddd....", ".........dddd..."),
+    "near": (".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....", ".....nn..dd.....",
+             ".....dd..ddd....", "....ddd..dddd...", "....dddd........"),
 }
 # Arm swing while walking: lower sleeves (rows 19-22) of the far arm (col 3)
 # and the near arm (col 13) swing back and forth
@@ -290,7 +320,9 @@ GB_SWING = {
           (14, 19, "c"), (14, 20, "c"), (15, 21, "c"), (15, 22, "k")),
     "b": ((12, 19, "c"), (11, 20, "c"), (11, 21, "c"), (10, 22, "k")),
 }
-GB_WALK = (("a", "a", 0), ("pass", "down", -2), ("b", "b", 0), ("pass", "down", -2))  # legs, arms, bob
+# The walk cycle: (legs, arms, bob in screen px, coat hem shift, ponytail lift)
+GB_WALK = (("far", "a", 0, 1, 0), ("stand", "down", 0, 0, 1), ("near", "b", 0, -1, 0), ("stand", "down", 0, 0, 1))
+GB_STEP_MS = 140  # per walk frame
 # Arms thrown up in a V: the sleeves (cols 3 and 13, rows 14-22) move up here
 GB_ARMS_UP = (
     (2, 13, "C"), (3, 13, "c"), (1, 12, "C"), (2, 12, "c"), (0, 11, "C"), (1, 11, "c"),
@@ -298,13 +330,22 @@ GB_ARMS_UP = (
     (12, 13, "c"), (13, 13, "C"), (13, 12, "c"), (14, 12, "C"), (14, 11, "c"), (15, 11, "C"),
     (15, 10, "c"), (16, 10, "C"), (15, 9, "k"), (16, 9, "k"), (15, 8, "k"), (16, 8, "k"),
 )
-GB_MOUTH = (11, 10)
+GB_MOUTHS = (  # closed, open, wide open (talking, shouting)
+    (), ((11, 10, "e"), (11, 11, "e")), ((10, 10, "e"), (11, 10, "e"), (10, 11, "e"), (11, 11, "e")),
+)
+GB_HAIR = [(c, r) for r in range(6, 13) for c in range(0, 3)]  # the ponytail at the back
+GB_HEM = (22, 23, 24)  # coat rows that swing
 
 _gb_cache = {}
 
 
-def guybrush_sprite(flip, legs, arms, mouth):
-    key = (flip, legs, arms, mouth)
+def guybrush_sprite(flip, legs, arms, mouth, hem=0, hair=0, front=False):
+    """mouth: 0 closed, 1 open, 2 wide; hem: the coat's lower edge shifted
+    by one column; hair: the ponytail lifted by one row; front: facing us
+    (then only the mouth counts)."""
+    if front:
+        flip, legs, arms, hem, hair = False, "stand", "down", 0, 0
+    key = (flip, legs, arms, mouth, hem, hair, front)
     runs = _gb_cache.get(key)
     if runs is not None:
         return runs
@@ -315,10 +356,17 @@ def guybrush_sprite(flip, legs, arms, mouth):
         if 0 <= r < 32 and 0 <= c + GB_OFF < cols:
             g[r][c + GB_OFF] = ch
 
-    for r, row in enumerate(GB_BODY + GB_LEGS[legs]):
+    for r, row in enumerate((GB_FRONT if front else GB_BODY) + GB_LEGS[legs]):
+        shift = hem if r in GB_HEM else 0
         for c, ch in enumerate(row):
             if ch != ".":
-                put(c, r, ch)
+                put(c + shift, r, ch)
+    if hair:  # the ponytail bounces up a row
+        tail = [(c, r, g[r][c + GB_OFF]) for c, r in GB_HAIR if g[r][c + GB_OFF] in "yYb"]
+        for c, r, _ in tail:
+            put(c, r, ".")
+        for c, r, ch in tail:
+            put(c, r - 1, ch)
     if arms == "up":
         for r in range(14, 23):
             put(3, r, ".")
@@ -332,8 +380,8 @@ def guybrush_sprite(flip, legs, arms, mouth):
             put(13, r, ".")
         for c, r, ch in GB_SWING[arms]:
             put(c, r, ch)
-    if mouth:
-        put(GB_MOUTH[0], GB_MOUTH[1], "e")
+    for c, r, ch in (GB_FRONT_MOUTHS if front else GB_MOUTHS)[mouth]:
+        put(c, r, ch)
     # selective outline: each outline pixel is a dark shade of its neighbour
     src = [row[:] for row in g]
     for r in range(32):
@@ -354,5 +402,11 @@ def guybrush_sprite(flip, legs, arms, mouth):
     return runs
 
 
-def draw_guybrush(gx, flip=False, legs="stand", arms="down", mouth=False, bob=0):
-    blit(guybrush_sprite(flip, legs, arms, mouth), gx, GB_Y + bob, GB)
+def draw_guybrush(gx, flip=False, legs="stand", arms="down", mouth=0, bob=0, hem=0, hair=0, scale=GB, y=GB_Y,
+                  front=False):
+    blit(guybrush_sprite(flip, legs, arms, mouth, hem, hair, front), gx, y + bob, scale)
+
+
+def walk_frame(ms):
+    """(legs, arms, bob, hem, hair) of the walk cycle ms into it."""
+    return GB_WALK[(ms // GB_STEP_MS) % len(GB_WALK)]

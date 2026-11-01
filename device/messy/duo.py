@@ -6,16 +6,18 @@ import math
 import random
 import time
 
-from messy import sound
+from messy import seasons, sound
 from messy.actors import RUN, WALK
 from messy.directors import arc, walk_to
-from messy.gfx import (ALERT_PEN, CLAWD_PEN, FUR_PEN, SEED_ART, SEED_PEN, STAND_PEN, WHEEL_PEN, WIDTH, display,
+from messy.gfx import (ALERT_PEN, CLAWD_PEN, EYE_PEN, FUR_PEN, SEED_ART, SEED_PEN, STAND_PEN, WHEEL_PEN, WIDTH,
+                       display, draw_bubble, draw_colour_art, pen,
                        draw_alert_sign, draw_art)
 from messy.prefs import settings
 from messy.particles import spawn
 from messy.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
 
-KINDS = (("fight", 3), ("chase", 3), ("dance", 2), ("snack", 2), ("leap", 2))  # (kind, weight)
+KINDS = (("fight", 3), ("chase", 3), ("dance", 2), ("snack", 2), ("leap", 2), ("hide", 2), ("season", 3))
+# (kind, weight)
 MEET_X, C_MEET_X = 74, 128  # standing nose to nose
 
 
@@ -380,10 +382,114 @@ class Duo:
             if t > 1400:
                 self.go("home")
 
+    def hide(self, ph, t, hp, cp):
+        """Hide and seek: Clawd counts, Messy hides off the edge and peeks,
+        Clawd looks around and finds him."""
+        m, c = self.m, self.c
+        if ph == "start":  # count to ten with the eyes covered
+            cp.eyes, cp.arms, cp.look = "closed", (2, 2), 0
+            self.fx.append(("count", c.x + 6 * CS, C_BASE_Y - 34, min(10, 1 + t // 450)))
+            hp.look = -1
+            if not self.move(m, -70, 6):
+                self.running(hp)
+            if t > 4600:
+                self.go("search")
+        elif ph == "search":
+            cp.look = 1 if t < 1500 else -1
+            if t > 1500 and not self.move(c, 96, 1.2):
+                self.walking(cp, 140)
+            peek = (t // 700) % 3 == 0  # Messy peeks in from the edge now and then
+            m.x = -44 if peek else -70
+            hp.look, hp.eyes = 1, "wide"
+            if t > 4200 and peek:
+                self.go("found")
+        elif ph == "found":
+            self.fx.append(("alert", c.x + 6 * CS, C_BASE_Y - 30))
+            cp.eyes, cp.look = "wide", -1
+            if not self.move(m, HOME_X, 6):
+                self.running(hp)
+                hp.look = 1
+            else:
+                hp.eyes = cp.eyes = "happy"
+                hp.jump, cp.jump = arc((t % 700) / 700, 14), arc((t % 700) / 700, 12)
+                if self.every(400):
+                    spawn("heart", m.x + 10 * S, BASE_Y, random.uniform(-0.5, 0.5), -1.4, 22)
+            if t > 3500:
+                self.go("home")
+
+    def season(self, ph, t, hp, cp):
+        """Something for the season: a snowman, kicking leaves, watering a
+        flower, ice cream."""
+        m, c = self.m, self.c
+        if ph == "start":  # stand a little apart, with room in between
+            self.sub = seasons.season(seasons.today(self.now))
+            a = self.move(m, MEET_X - 26, 2.5)
+            b = self.move(c, C_MEET_X + 26, 2.5)
+            if not a:
+                self.walking(hp)
+            if not b:
+                self.walking(cp, 120)
+            if a and b:
+                self.go("act")
+            return
+        sx = (m.x + 8 * S + c.x + 8 * CS) // 2  # between them
+        hp.eyes = cp.eyes = "happy"
+        if self.sub == "winter":  # build a snowman
+            self.fx.append(("snowman", sx, min(4, t // 1000)))
+            if t < 3600:
+                hp.paws, cp.arms = ((13, 8), (14, 9)), (3, False)
+                hp.bob = cp.bob = (t // 250) % 2
+            elif t > 4800:
+                hp.jump, cp.jump = arc((t % 700) / 700, 14), arc((t % 700) / 700, 12)
+            if t > 6800:
+                self.go("home")
+        elif self.sub == "autumn":  # kick through the leaves
+            i = t // 1500
+            a = self.move(m, (16, 70)[i % 2], 4)
+            b = self.move(c, (110, 150)[i % 2], 3)
+            hp.look = cp.look = 1 if i % 2 else -1
+            if not a:
+                self.running(hp)
+            if not b:
+                self.running(cp)
+            if self.every(110):
+                for x in (m.x + 8 * S, c.x + 8 * CS):
+                    spawn("leaf", x + random.randint(-10, 10), GROUND - 4, random.uniform(-1.5, 1.5),
+                          random.uniform(-3, -1.5), 60, random.choice(seasons.LEAF_PENS))
+            if t > 6000:
+                self.go("home")
+        elif self.sub == "spring":  # water a flower until it blooms
+            self.fx.append(("flower", sx, min(3, t // 1100)))
+            hp.look, cp.look = 1, -1
+            if t < 4000:
+                hp.eyes = "open"
+                hp.paws = ((13, 8),)
+                hp.props = (("can", 15 * S, 6 * S),)
+                if t > 400 and self.every(110):
+                    spawn("drop", m.x + 15 * S + 16, BASE_Y + 6 * S + 2, random.uniform(0.6, 1.4), 0.5, 20)
+            else:
+                hp.jump, cp.jump = arc((t % 700) / 700, 12), arc((t % 700) / 700, 10)
+            if t > 5600:
+                self.go("home")
+        else:  # summer: ice cream
+            left = max(0, 3 - t // 1800)
+            hp.paws = ((15, 9),)
+            hp.props = (("cone", 15 * S, 4 * S, left, 0),)
+            cp.arms = (3, False)
+            cp.props = (("cone", -8, 2 * CS - 4, left, 1),)
+            hp.mouth = 1 + (t // 200) % 2 if left else 0
+            if 2500 < t < 4000 and self.every(400):  # Clawd's drips
+                spawn("drop", c.x - 4, C_BASE_Y + 2 * CS, 0, 0.5, 20)
+            if t > 6000:
+                hp.jump, cp.jump = arc((t % 700) / 700, 12), arc((t % 700) / 700, 10)
+            if t > 7200:
+                self.go("home")
+
     # effects
 
     def draw(self, now):
-        for kind, fx, fy in self.fx:
+        for f in self.fx:
+            kind, fx, fy = f[0], f[1], f[2]
             if kind == "cloud":  # grey dust blob that boils, limbs poking out
                 draw_cloud(fx, GROUND - 40, now)
             elif kind == "stars":
@@ -393,8 +499,37 @@ class Duo:
                     display.rectangle(fx + int(16 * math.cos(a)) - 2, fy + int(5 * math.sin(a)) - 2, 4, 4)
             elif kind == "seed":
                 draw_art(SEED_ART, fx, fy, S, SEED_PEN)
+            elif kind == "count":  # Clawd counting
+                draw_bubble(str(f[3]), int(fx), int(fy))
+            elif kind == "snowman":
+                draw_snowman(fx, fy)
+            elif kind == "flower":
+                draw_flower(fx, fy)
             elif kind == "alert":
                 draw_alert_sign(int(fx), int(fy))
+
+
+# 4 px pixel art: a snowman built ball by ball (w snow, u shade, e coal, o
+# carrot) and a flower growing (g stem, l leaf, y bud, p petals)
+_BALL = ("..www..", ".wwwwu.", "wwwwwwu", "wwwwwwu", ".wwwuu.")
+_MIDDLE = ("..www..", ".wwwwu.", ".wwwwu.", "..wuu..")
+SNOWMAN = (("..ww...", ".wwwu..", "..uu..."), _BALL, _MIDDLE + _BALL,
+           ("..www..", "..www..", "..wwu..") + _MIDDLE + _BALL,
+           ("..www..", "..ewe..", "..wwoo.") + _MIDDLE + _BALL)
+SNOW_PENS = {"w": pen((240, 242, 250)), "u": pen((184, 194, 220)), "e": EYE_PEN, "o": pen((255, 140, 0))}
+FLOWER = ((".g.", ".g."), (".g.", "lg.", ".gl", ".g."), (".y.", ".g.", "lg.", ".gl", ".g."),
+          (".p.", "pyp", ".p.", "lg.", ".gl", ".g."))
+FLOWER_PENS = {"g": pen((0, 150, 60)), "l": pen((0, 200, 80)), "y": pen((255, 236, 39)), "p": pen((255, 119, 168))}
+
+
+def draw_snowman(cx, stage):
+    art = SNOWMAN[stage]
+    draw_colour_art(art, SNOW_PENS, cx - 14, GROUND + 4 - len(art) * 4)
+
+
+def draw_flower(cx, stage):
+    art = FLOWER[stage]
+    draw_colour_art(art, FLOWER_PENS, cx - 6, GROUND + 4 - len(art) * 4)
 
 
 def draw_cloud(cx, cy, now):

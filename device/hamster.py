@@ -34,13 +34,16 @@
 #   scene      sky, clock, wheel, characters: the main page
 #   seasons    meadow, seasonal particles, holidays; particles: all of them
 #   pages      the other pages
-#   herdr      agent and pipeline status from the PC; home: Home Assistant
+#   herdr      agent and pipeline status and the daily note from the PC
+#   reminder   the pirate walks by before an appointment
+#   critters   a bird and a snail passing through
+#   home       Home Assistant
 #   sound, leds, prefs
 
 import network
 import time
 
-from messy import herdr, home, leds, pages, particles, scene, seasons, sound
+from messy import critters, herdr, home, leds, pages, particles, reminder, scene, seasons, sound
 from messy.actors import DIRECTED, FREE, Clawd, Messy
 from messy.directors import Ball, Visit, visit_due
 from messy.duo import Duo
@@ -227,6 +230,7 @@ def pose(now, k):
     clawd.act(now, k, cp)
     if director and not director.update(now, k, hp, cp):
         director = None
+    critters.react(messy, hp)
     messy.finish(now, hp)
     clawd.finish(now, cp)
 
@@ -293,6 +297,8 @@ while True:
     follow_agents(now)
 
     wear = pose(now, k)
+    critters.update(now, k, messy, clawd, cp)
+    reminder.update(now, k, isinstance(director, Visit))  # not while he's really here
     particles.update(k)
 
     if view == "scene":

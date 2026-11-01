@@ -32,6 +32,8 @@ SOUNDS = {  # (start Hz, end Hz, ms)
     # Claude: a soft ding-dong when it's done, three quick beeps when it needs you
     "agent_done": ((1319, 1319, 80), (0, 0, 30), (1047, 1047, 160)),
     "agent_alert": ((1760, 1760, 60), (0, 0, 60), (1760, 1760, 60), (0, 0, 60), (1760, 1760, 60)),
+    # an appointment comes up: a little horn call
+    "remind": ((523, 523, 110), (0, 0, 40), (659, 659, 110), (0, 0, 40), (784, 784, 240)),
     # fight: growls, punches, a whoosh when they fly apart, an aww for the hug
     "grr": ((150, 120, 160),),
     "pow": ((320, 70, 70),),
@@ -40,7 +42,7 @@ SOUNDS = {  # (start Hz, end Hz, ms)
     "whoosh": ((2200, 500, 220),),
     "aww": ((660, 880, 120), (0, 0, 30), (880, 1047, 180)),
 }
-PIPE_SOUNDS = ("pipe_start", "pipe_ok", "pipe_fail", "click", "agent_done", "agent_alert")  # SOUNDS switch
+PIPE_SOUNDS = ("pipe_start", "pipe_ok", "pipe_fail", "click", "agent_done", "agent_alert", "remind")  # SOUNDS switch
 FIGHT_SOUNDS = ("grr", "pow", "bam", "bonk", "whoosh", "aww")  # ANIMATION switch (scene sounds)
 
 # Original pirate jingle (not the game's theme): (Hz, ms), 0 is a rest

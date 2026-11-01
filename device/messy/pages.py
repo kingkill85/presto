@@ -6,7 +6,7 @@
 
 import network
 
-from messy import herdr, home, prefs, sound
+from messy import herdr, home, prefs, seasons, sound
 from messy.gfx import (ALERT_PEN, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
                        GEAR_B, HEIGHT, IDLE_PEN, MANUAL_PEN, PANEL_HI_PEN, PANEL_LO_PEN, PANEL_PEN, PLAY, QMARK, RING,
                        SLASH, SPARK, SPARK_X, TEXT_PEN, TICK, TICK_PEN, WHEEL_PEN, WIDTH, display, draw_art,
@@ -14,7 +14,7 @@ from messy.gfx import (ALERT_PEN, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, 
 from messy.scene import draw_weather_icon
 
 wlan = network.WLAN(network.STA_IF)
-VIEWS = ("scene", "agents", "pipelines", "home", "settings")  # swipe order
+VIEWS = ("scene", "today", "agents", "pipelines", "home", "settings")  # swipe order
 
 MINI_HAMSTER = (".#....#.", "########", "##.##.##", "########", ".######.")
 MINI_CLAWD = (".######.", ".#.##.#.", "########", ".######.", ".#.#.#.#")
@@ -72,6 +72,83 @@ def shorten(text, n):
 def tick_if(cond, now, ms):
     """A number that changes every ms milliseconds while cond holds."""
     return now // ms if cond else 0
+
+
+# --- today: the daily note ------------------------------------------------------
+
+CALENDAR = ("#.#.#", "#####", "#...#", "#.#.#", "#####")
+ROW = 12
+BOTTOM = HEIGHT - 12  # above the page dots
+
+
+def today_key(now):
+    t = seasons.today(now)
+    return herdr.day, (t[3] * 60 + t[4]) if t else 0  # the next appointment moves on
+
+
+def draw_today(now):
+    day = herdr.day
+    draw_header(CALENDAR, 10, 9, ALERT_PEN, "HEUTE")
+    if not day:
+        draw_waiting("Waiting for the daily note...", "comes with the pipeline poller")
+        return
+    _, mo, d = day["date"].split("-")
+    date = "%d.%d." % (int(d), int(mo))
+    display.set_pen(DIM_PEN)
+    display.text(date, WIDTH - 12 - display.measure_text(date, 2), 10, -1, 2)
+    if not day.get("note"):
+        draw_waiting("Kein Arbeitstag", "Keine Tagesnotiz fuer heute")
+        return
+    t = seasons.today(now)
+    nxt = herdr.next_event(t)
+    y = 32
+    if day["events"]:
+        y = draw_label("TERMINE", y)
+        for e in day["events"]:
+            if y + ROW > BOTTOM:
+                return
+            if e is nxt:
+                draw_panel(6, y - 2, WIDTH - 12, ROW + 2)
+            past = not e.get("x") and nxt is not None and e is not nxt and e["t"] < nxt["t"]
+            display.set_pen(DIM_PEN if e.get("x") or past else TEXT_PEN)
+            display.text(e["t"], 14, y, -1, 1)
+            display.text(shorten(e["n"], (WIDTH - 60) // 6), 50, y, -1, 1)
+            if e.get("x"):  # crossed out
+                display.rectangle(50, y + 3, display.measure_text(shorten(e["n"], (WIDTH - 60) // 6), 1), 1)
+            y += ROW
+        y += 4
+    if day["tasks"]:
+        y = draw_label("AUFGABEN", y)
+        for i, task in enumerate(day["tasks"]):
+            if y + ROW > BOTTOM:
+                display.set_pen(DIM_PEN)
+                display.text("+%d" % (len(day["tasks"]) - i), WIDTH - 30, y - ROW, -1, 1)
+                return
+            done = task.get("x")
+            draw_checkbox(14, y, done)
+            display.set_pen(DIM_PEN if done else TEXT_PEN)
+            display.text(shorten(task["n"], (WIDTH - 34) // 6), 26, y, -1, 1)
+            y += ROW
+
+
+def draw_label(text, y):
+    display.set_pen(DIM_PEN)
+    display.text(text, 10, y, -1, 1)
+    w = display.measure_text(text, 1)
+    display.rectangle(14 + w, y + 3, WIDTH - 24 - w, 1)
+    return y + 12
+
+
+def draw_checkbox(x, y, done):
+    if done:
+        display.set_pen(TICK_PEN)
+        display.rectangle(x, y, 7, 7)
+    else:
+        display.set_pen(DIM_PEN)
+        display.rectangle(x, y, 7, 1)
+        display.rectangle(x, y + 6, 7, 1)
+        display.rectangle(x, y, 1, 7)
+        display.rectangle(x + 6, y, 1, 7)
 
 
 # --- agents ------------------------------------------------------------------
@@ -353,6 +430,7 @@ def tap_settings(tx, ty):
 # --- showing a page --------------------------------------------------------------
 
 PAGES = {  # view -> (key, draw)
+    "today": (today_key, draw_today),
     "agents": (agents_key, draw_agents),
     "pipelines": (pipelines_key, draw_pipelines),
     "home": (home_key, draw_home),

@@ -7,11 +7,11 @@ import ntptime
 import time
 import tz
 
-from messy import herdr, home, particles, seasons
+from messy import critters, herdr, home, particles, reminder, seasons
 from messy.gfx import (ALERT_PEN, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, DOT_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
                        GEAR_B, IDLE_PEN, MANUAL_PEN, PLAY, RING_SMALL, SEED_ART, SEED_PEN, SLASH, SPARK, SPARK_X,
                        STAND_PEN, TICK, TICK_PEN, WHEEL_DARK_PEN, WHEEL_PEN, WIDTH, display, draw_alert_sign,
-                       draw_art, draw_bubble, draw_degrees, pen)
+                       draw_art, draw_bubble, draw_colour_art, draw_degrees, pen, snap)
 from messy.sprites import (BASE_Y, C_BASE_Y, CS, GROUND, HOME_X, S, draw_clawd, draw_hamster, draw_leaf_umbrella,
                            draw_umbrella)
 
@@ -120,20 +120,48 @@ def draw_weather_icon(cond, night, x, y, s):
         draw_art(BOLT_ART, x + 4 * s, y + 7 * s, s, ALERT_PEN)
 
 
-def draw_weather_line():
-    """Temperature and condition below the clock."""
+def weather_texts():
+    """(temperature, condition) for the top right corner; None if unknown."""
     if not home.weather_state():
-        return
-    cond, _ = home.weather()
+        return None, None
     t = home.temperature()
-    temp = "%d" % round(t) if t is not None else ""
-    desc = home.CONDITION_DE.get(cond, (cond or "").upper())
-    tw = display.measure_text(temp, 2) + 12 if temp else 0
-    x, y = (WIDTH - tw - display.measure_text(desc, 1)) // 2, 94
+    cond = home.weather()[0]
+    return ("%d" % round(t) if t is not None else None), home.CONDITION_DE.get(cond, (cond or "").upper())
+
+
+def corner_width():
+    """How much of the top right corner the weather takes."""
+    temp, desc = weather_texts()
+    w = display.measure_text(temp, 2) + 6 if temp else 0  # with the degree sign
+    return max(w, display.measure_text(desc, 1) if desc else 0)
+
+
+def draw_corner_weather():
+    """Temperature and condition top right, opposite the weather symbol."""
+    temp, desc = weather_texts()
     if temp:
-        draw_degrees(temp, x, y, 2, DATE_PEN)
+        draw_degrees(temp, WIDTH - 6 - display.measure_text(temp, 2) - 6, 4, 2, DATE_PEN)
+    if desc:
+        display.set_pen(DATE_PEN)
+        display.text(desc, WIDTH - 6 - display.measure_text(desc, 1), 23, -1, 1)
+
+
+def draw_next_event(now):
+    """The next appointment from the daily note (the pirate reminds of it)."""
+    t = seasons.today(now)
+    e = herdr.next_event(t)
+    if not e:
+        return
     display.set_pen(DATE_PEN)
-    display.text(desc, x + tw, y + 4, -1, 1)
+    name = e["n"].upper()
+    line = e["t"] + " " + name
+    if display.measure_text(line, 2) <= WIDTH - 8:  # all in big letters
+        display.text(line, (WIDTH - display.measure_text(line, 2)) // 2, 92, -1, 2)
+        return
+    display.text(e["t"], (WIDTH - display.measure_text(e["t"], 2)) // 2, 90, -1, 2)  # the time big,
+    if len(name) > 38:  # the name small below
+        name = name[:37] + ".."
+    display.text(name, (WIDTH - display.measure_text(name, 1)) // 2, 108, -1, 1)
 
 
 # --- clock -----------------------------------------------------------------------
@@ -183,15 +211,17 @@ def draw_clock(now):
             continue
         draw_art(DIGITS[ch], x, y, b, CLOCK_PEN)
         x += 4 * b
-    # centred, but clear of the weather symbol in the corner; long weekdays
-    # are shortened when they don't fit
+    # centred between the weather symbol and the temperature in the corners;
+    # long weekdays are shortened when they don't fit
     left = 46 if home.weather_state() else 8
+    corner = corner_width()
+    right = corner + 12 if corner else 8
     date = "%s %d.%d." % (WEEKDAYS[t[6]], t[2], t[1])
-    if display.measure_text(date, 2) > WIDTH - left - 6:
+    if display.measure_text(date, 2) > WIDTH - left - right:
         date = "%s %d.%d." % (WEEKDAYS[t[6]][:2], t[2], t[1])
     dw = display.measure_text(date, 2)
     display.set_pen(DATE_PEN)
-    display.text(date, max(left, (WIDTH - dw) // 2), 12, -1, 2)
+    display.text(date, max(left, min((WIDTH - dw) // 2, WIDTH - right - dw)), 12, -1, 2)
 
 
 # --- ground ------------------------------------------------------------------------
@@ -308,6 +338,37 @@ def draw_pipe_bar(now):
         y += 14
 
 
+# --- things the characters hold -----------------------------------------------------
+
+HOLE_PEN = pen((40, 26, 22))
+SOIL_PEN = pen((122, 74, 50))
+MUG_PEN = pen((240, 236, 228))
+BLOCK_PENS = (pen((255, 163, 0)), pen((255, 236, 39)), pen((240, 236, 228)))
+PROP_PENS = {"w": MUG_PEN, "c": pen((90, 50, 30)), "b": pen((41, 173, 255)), "B": pen((20, 110, 190)),
+             "k": pen((220, 160, 80)), "K": pen((170, 110, 50))}
+SCOOP_PENS = tuple(dict(PROP_PENS, x=p) for p in (pen((255, 119, 168)), pen((240, 236, 228)), pen((140, 90, 60))))
+# 4 px pixel art: a mug (w, coffee c), a watering can (b, B), cones (k, K) with
+# x scoops of ice cream, fewer as it gets eaten
+MUG = ("cc.", "wwB", "ww.")
+CAN = ("..BB..", "bbbb..", "bbbbbb", "bbbb..")
+CONES = (("..", "..", "kK", ".k"), ("..", ".x", "kK", ".k"), ("..", "xx", "kK", ".k"), ("xx", "xx", "kK", ".k"))
+BLOCK = ("##", "##")
+
+
+def draw_props(x, y, props):
+    """props: (kind, x, y, ...) in px from the actor's corner."""
+    for prop in props:
+        kind, px, py = prop[0], int(x) + prop[1], int(y) + prop[2]
+        if kind == "mug":
+            draw_colour_art(MUG, PROP_PENS, px, py)
+        elif kind == "block":
+            draw_art(BLOCK, snap(px), snap(py), 4, BLOCK_PENS[prop[3] % 3])
+        elif kind == "can":  # watering can, spout to the right
+            draw_colour_art(CAN, PROP_PENS, px, py)
+        elif kind == "cone":  # prop[3]: how much is left (0..3), prop[4]: flavour
+            draw_colour_art(CONES[prop[3]], SCOOP_PENS[prop[4] % 3], px, py - 8)
+
+
 # --- the whole scene -------------------------------------------------------------------
 
 def draw(now, messy, hp, clawd, cp, director, wear):
@@ -319,11 +380,13 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     draw_ground(now, sky_background(now), ((x + 8 * S, 12 * S - jump), (c_x + 8 * CS, 14 * CS - c_jump)))
     draw_sky(now)
     draw_clock(now)
-    draw_weather_line()
+    draw_corner_weather()
+    draw_next_event(now)
     draw_agent_bar(now)
     draw_pipe_bar(now)
     if home.weather()[0] == "fog":
         draw_fog(now)
+    reminder.draw(now)  # behind everyone
 
     # Messy, in the wheel while a pipeline runs or after one failed
     state = messy.state
@@ -331,43 +394,55 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     if in_wheel:
         draw_wheel_back(WHEEL_CX, -messy.wheel_turn if state == "wheel" else 0.3)
         jump += WHEEL_LIFT
-    y = BASE_Y - jump
+    x += hp.dx
+    y = BASE_Y - jump + hp.sink
+    if hp.hole:  # a hole he is digging
+        w = snap(12 + 28 * hp.hole)
+        display.set_pen(HOLE_PEN)
+        display.rectangle(snap(x + 8 * S - w // 2), GROUND, w, 4)
     if not hp.hide:
         draw_hamster(x, y, hp, wear)
         if hp.umbrella:
             draw_leaf_umbrella(x, y + hp.bob * S)
+        draw_props(x, y, hp.props)
+    if hp.sink:  # the front edge of the hole hides what's down in it
+        display.set_pen(SOIL_PEN)
+        display.rectangle(int(x), GROUND + 4, 16 * S, snap(hp.sink))
     if in_wheel:
         draw_wheel_rim(WHEEL_CX, -int(messy.wheel_turn * 6) if state == "wheel" else 0, state == "broken")
         if state == "broken" and (now // 500) % 2 == 0:
             draw_art(CROSS, WHEEL_CX - 8, WHEEL_CY - WHEEL_R - 24, 3, FAIL_PEN)
     if hp.bubble == "tick":
         draw_art(TICK, x + 5 * S, y - 22, 4, TICK_PEN)
-    elif hp.bubble == "name":
-        draw_bubble("MESSY", int(x) + 2, y - 30)
+    elif hp.bubble:
+        draw_bubble("MESSY" if hp.bubble == "name" else hp.bubble, int(x) + 2, y - 30)
     if hp.seed_y is not None:  # a seed falling from the sky
         draw_art(SEED_ART, x + 7 * S, hp.seed_y, S, SEED_PEN)
 
     # Clawd
+    c_x += cp.dx
     c_y = C_BASE_Y - c_jump
     if not cp.hide:
         draw_clawd(c_x, c_y, cp, wear)
         if cp.umbrella:
             draw_umbrella(c_x, c_y + cp.bob * CS)
+        draw_props(c_x, c_y, cp.props)
     if cp.bubble == "!":
         draw_alert_sign(int(c_x) + 6 * CS, c_y - 30)
         display.set_pen(ALERT_PEN)
         display.rectangle(int(c_x) + 6 * CS + 4, c_y - 8, 4, 4)  # little tail
     elif cp.bubble == "tick":
         draw_art(TICK, int(c_x) + 5 * CS, c_y - 22, 4, TICK_PEN)
-    elif cp.bubble == "name":
-        draw_bubble("CLAWD", int(c_x) + 6, c_y - 30)
+    elif cp.bubble:
+        draw_bubble("CLAWD" if cp.bubble == "name" else cp.bubble, int(c_x) + 6, c_y - 30)
     if cp.laptop:  # Claude Code style spinner star
         draw_art(SPARK if (now // 150) % 2 else SPARK_X, int(c_x) + 14 * CS, C_BASE_Y - 12, 3, CLAWD_PEN)
-    if cp.think:
+    if cp.think:  # thinking dots above the head, clear of the spinner
         display.set_pen(DOT_PEN)
         for i in range(min(3, cp.think)):
-            display.rectangle(int(c_x) + 11 * CS + i * 7, C_BASE_Y - 10, 4, 4)
+            display.rectangle(int(c_x) + 5 * CS + i * 8, c_y - 12 + cp.bob * CS, 4, 4)
 
+    critters.draw(now)
     if director:
         director.draw(now)
     particles.draw()
