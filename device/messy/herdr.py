@@ -31,6 +31,11 @@ pipe_beep = None  # "pipe_start", "pipe_ok" or "pipe_fail"
 _agent_seen = {}  # (workspace, kind) -> last status
 _pipe_seen = {}  # (space, MR or branch) -> last status
 
+# Pipelines seen running or waiting since boot, with their last status, for
+# the icons in the scene: [[(space, MR or branch), status], ...], oldest first
+recent_pipes = []
+MAX_RECENT = 5
+
 _wlan = network.WLAN(network.STA_IF)
 _sock = None
 
@@ -67,6 +72,27 @@ def _watch_pipes(items):
         elif s in WAITING_STATES and before not in WAITING_STATES and not pipe_beep:
             pipe_beep = "pipe_start"
     _pipe_seen = seen
+    _track_pipes(items)
+
+
+def _track_pipes(items):
+    """Remember pipelines once they run; keep their last status after that."""
+    for it in items:
+        key, s = (it.get("w"), it.get("n")), it.get("s")
+        for entry in recent_pipes:
+            if entry[0] == key:
+                entry[1] = s
+                break
+        else:
+            if s in WAITING_STATES:
+                recent_pipes.append([key, s])
+    while len(recent_pipes) > MAX_RECENT:  # drop the oldest finished one
+        for i, (_, s) in enumerate(recent_pipes):
+            if s not in WAITING_STATES:
+                del recent_pipes[i]
+                break
+        else:
+            del recent_pipes[0]
 
 
 def poll(now):
@@ -91,6 +117,8 @@ def poll(now):
             msg = json.loads(data)
             if msg.get("type") == "pipelines":
                 pipe_status = msg["status"] if msg["status"] != "none" else None
+                if pipe_status is None:  # Herdr closed
+                    recent_pipes.clear()
                 pipe_items = msg.get("items", [])
                 _watch_pipes(pipe_items)
                 pipe_rx = now
@@ -108,6 +136,7 @@ def poll(now):
     if pipe_status and time.ticks_diff(now, pipe_rx) > PIPE_STALE_MS:
         pipe_status = None
         pipe_items = []
+        recent_pipes.clear()
 
 
 def pipes_fresh(now):
@@ -116,13 +145,10 @@ def pipes_fresh(now):
 
 
 def progress():
-    """(share of jobs done 0..1, number of pipelines) over all running
-    pipelines together, or (None, 0)."""
-    done = total = n = 0
+    """Share of jobs done (0..1) over all running pipelines together, or None."""
+    done = total = 0
     for it in pipe_items:
-        if it.get("s") == "running":
-            n += 1
-            if "/" in it.get("p", ""):
-                d, t = (int(v) for v in it["p"].split("/"))
-                done, total = done + d, total + t
-    return (done / total if total else None), n
+        if it.get("s") == "running" and "/" in it.get("p", ""):
+            d, t = (int(v) for v in it["p"].split("/"))
+            done, total = done + d, total + t
+    return done / total if total else None

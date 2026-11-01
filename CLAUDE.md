@@ -69,6 +69,13 @@ A restart loses the agent status until the next poller round (≤30 s).
   sets the LEDs. External status overrides states: Herdr agents → Clawd
   (`work`, `alert`, `done`), pipelines → Messy (`wheel`, `broken`), but never
   during a director (an agent asking a question ends `Ball` and `Duo`).
+- While a status wants an actor (wheel, laptop), its state never times out into
+  a random pick, so no game or scene can start over it (`next_state`).
+- After a failed pipeline Messy sits in the broken wheel (and the LEDs pulse
+  red) for `BROKEN_MS` only, then gets out; another failure starts it again.
+- Left of the clock: one icon per pipeline that ran since boot, with its last
+  status (`herdr.recent_pipes`, max `MAX_RECENT`, oldest finished drop out).
+  Right of the clock: one icon per agent.
 - Movement is time based (`k` = frame time / 66 ms), target ~30 fps. Use
   `time.ticks_diff`/`ticks_add` for times, `ticks_ms` wraps after ~12 days.
 - Particles age on every page (`scene.update_particles`), but are only drawn

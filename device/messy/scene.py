@@ -8,11 +8,11 @@ import time
 import tz
 
 from messy import herdr, home
-from messy.gfx import (ALERT_PEN, ANGER, BACKGROUND, CLAWD_PEN, CROSS, CRUMB_PEN, DOT_PEN, EXCL, FAIL_PEN, HEART,
-                       HEART_PEN, HEIGHT, IDLE_PEN, MANUAL_PEN, NOTE, RING_SMALL, SEED_ART, SEED_PEN, SHADOW,
-                       SNOW_SHADOW, SPARK, SPARK_PEN, SPARK_X, STAND_PEN, TICK, TICK_PEN, TEXT_PEN, WHEEL_DARK_PEN,
-                       WHEEL_PEN, WIDTH, WOOL_PEN, ZED, ZED_PEN, blit, display, draw_alert_sign, draw_art, draw_bubble,
-                       draw_degrees, pen, runs_from_grid)
+from messy.gfx import (ALERT_PEN, ANGER, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, CRUMB_PEN, DOT_PEN, EXCL, FAIL_PEN,
+                       FUR_PEN, GEAR_A, GEAR_B, HEART, HEART_PEN, HEIGHT, IDLE_PEN, MANUAL_PEN, NOTE, PLAY,
+                       RING_SMALL, SEED_ART, SEED_PEN, SHADOW, SLASH, SNOW_SHADOW, SPARK, SPARK_PEN, SPARK_X,
+                       STAND_PEN, TICK, TICK_PEN, WHEEL_DARK_PEN, WHEEL_PEN, WIDTH, WOOL_PEN, ZED, ZED_PEN, blit,
+                       display, draw_alert_sign, draw_art, draw_bubble, draw_degrees, pen, runs_from_grid)
 from messy.sprites import (BASE_Y, C_BASE_Y, CS, GROUND, HOME_X, S, draw_clawd, draw_hamster, draw_leaf_umbrella,
                            draw_umbrella)
 
@@ -334,7 +334,7 @@ def draw_wheel_back(cx, turn):
 
 def draw_wheel_rim(cx, shift, broken):
     n = len(WHEEL_RIM)
-    frac, running = (None, 0) if broken else herdr.progress()
+    frac = None if broken else herdr.progress()
     filled = int(frac * n + 0.5) if frac is not None else 0
     for i, (dx, dy) in enumerate(WHEEL_RIM):
         if broken:
@@ -344,15 +344,6 @@ def draw_wheel_rim(cx, shift, broken):
         else:
             display.set_pen(WHEEL_DARK_PEN if (i + shift) % 3 == 0 else WHEEL_PEN)
         display.rectangle(cx + dx - 4, WHEEL_CY + dy - 4, 8, 8)
-    if running > 1:  # how many pipelines are running: a little sign on top
-        label = str(running)
-        w = display.measure_text(label, 2)
-        top = WHEEL_CY - WHEEL_R - 26
-        display.set_pen(PROGRESS_DARK_PEN)
-        display.rectangle(cx - w // 2 - 4, top, w + 8, 20)
-        display.rectangle(cx - 1, top + 20, 3, 6)  # post down to the rim
-        display.set_pen(TEXT_PEN)
-        display.text(label, cx - w // 2 + 1, top + 3, -1, 2)
 
 
 # --- agent icons -------------------------------------------------------------------
@@ -371,6 +362,26 @@ def draw_agent_bar(now):
                 draw_art(EXCL, x - 1, y - 1, 2, ALERT_PEN)
         else:
             draw_art(RING_SMALL, x, y, 3, IDLE_PEN)
+        y += 14
+
+
+def draw_pipe_bar(now):
+    """One small icon per pipeline that ran since boot, with its last status,
+    on the left edge of the scene below the weather symbol."""
+    x, y = 6, 46
+    for _, s in herdr.recent_pipes:
+        if s == "running":
+            draw_art(GEAR_A if (now // 200) % 2 else GEAR_B, x, y, 2, FUR_PEN)
+        elif s == "failed":
+            draw_art(CROSS, x, y, 2, FAIL_PEN)
+        elif s == "success":
+            draw_art(TICK, x, y, 2, TICK_PEN)
+        elif s == "manual":
+            draw_art(PLAY, x, y, 2, MANUAL_PEN)
+        elif s in herdr.WAITING_STATES:
+            draw_art(CLOCK, x, y, 2, WHEEL_PEN)
+        else:  # canceled, skipped
+            draw_art(SLASH, x, y, 2, IDLE_PEN)
         y += 14
 
 
@@ -438,6 +449,7 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     draw_clock(now)
     draw_weather_line()
     draw_agent_bar(now)
+    draw_pipe_bar(now)
     if home.weather()[0] == "fog":
         draw_fog(now)
 

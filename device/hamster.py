@@ -88,6 +88,9 @@ touch_start = touch_last = None
 name_tag = None  # (actor, until): name bubble after a tap
 shown_pipe = None  # pipeline status the hamster last reacted to
 cheer_until = 0
+BROKEN_MS = 2 * 60 * 1000  # how long Messy sits in the broken wheel after a failure
+last_pipe = None  # pipeline status of the last frame
+failed_at = None  # when the last pipeline failed
 frame = 0
 
 
@@ -130,9 +133,13 @@ def handle_touch(now):
             clawd.start("happy")
 
 
-def next_state(actor, other):
-    """The actor's state ran out: pick the next one, maybe with a director."""
+def next_state(actor, other, now):
+    """The actor's state ran out: pick the next one, maybe with a director.
+    Not while a status wants it (wheel, laptop): no game may start then."""
     global director
+    if (messy_wanted(now) if actor is messy else clawd_wanted()):
+        actor.start("idle")  # follow_pipelines / follow_agents take over right after
+        return
     name = actor.pick(other.state)
     if name == "ball":
         director = Ball(messy, clawd)
@@ -144,8 +151,11 @@ def next_state(actor, other):
 
 def follow_pipelines(now):
     """Pipeline status takes over Messy, but never during a director."""
-    global shown_pipe, cheer_until
+    global shown_pipe, cheer_until, last_pipe, failed_at
     status = herdr.pipe_status
+    if status == "failed" and (last_pipe != "failed" or herdr.pipe_beep == "pipe_fail"):
+        failed_at = now  # one more failure: back into the broken wheel for a while
+    last_pipe = status
     if status != shown_pipe and messy.state not in DIRECTED:
         if shown_pipe == "running" and status == "success":
             messy.start("happy")  # all green: cheer
@@ -158,12 +168,31 @@ def follow_pipelines(now):
         herdr.pipe_beep = None
     if messy.state in DIRECTED or messy.state in ("happy", "startle"):
         return
-    wanted = MESSY_FOR.get(status)
+    wanted = messy_wanted(now)
     if wanted and messy.state != wanted:
         messy.x = messy.target = WHEEL_CX - 8 * S
         messy.start(wanted)
     elif not wanted and messy.state in ("wheel", "broken"):
         messy.start("idle")
+
+
+def messy_wanted(now):
+    """wheel, broken or None, from the pipeline status."""
+    wanted = MESSY_FOR.get(herdr.pipe_status)
+    if wanted == "broken" and not showing_failure(now):
+        return None  # sat there long enough, the cross in the bar stays
+    return wanted
+
+
+def clawd_wanted():
+    """work, alert, done or None, from the agent status."""
+    return CLAWD_FOR.get(herdr.agent_status)
+
+
+def showing_failure(now):
+    """A pipeline failed within BROKEN_MS: broken wheel and red LEDs."""
+    return (herdr.pipe_status == "failed" and failed_at is not None
+            and time.ticks_diff(now, failed_at) < BROKEN_MS)
 
 
 def follow_agents(now):
@@ -174,7 +203,7 @@ def follow_agents(now):
         if herdr.agent_beep == "done":
             clawd.flash_until = time.ticks_add(now, 2500)
         herdr.agent_beep = None
-    wanted = CLAWD_FOR.get(herdr.agent_status)
+    wanted = clawd_wanted()
     if wanted == "alert" and director and director.interruptible:
         director = None
         messy.start("idle")
@@ -226,7 +255,7 @@ def update_leds(now):
     status, own = None, ()
     if settings["leds"]:
         own = leds.agent_colours(now)  # one LED per agent
-        if herdr.pipe_status == "failed":
+        if showing_failure(now):
             status = "failed"
     mood = director.mood(now) if director else None
     if not settings["anim_leds"]:
@@ -250,9 +279,9 @@ while True:
             and visit_due(now)):  # only when neither is busy working
         director = Visit(messy, clawd, now)
     if messy.timed_out(now):
-        next_state(messy, clawd)
+        next_state(messy, clawd, now)
     if clawd.timed_out(now):
-        next_state(clawd, messy)
+        next_state(clawd, messy, now)
 
     if frame % 4 == 0:
         keep_wifi(now)
