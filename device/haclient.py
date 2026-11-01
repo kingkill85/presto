@@ -16,6 +16,7 @@ class HAClient:
         self.gap_ms = gap_ms
         self.timeout_ms = timeout_ms
         self.states = {}  # entity_id -> {"state": ..., "attributes": {...}}
+        self.version = 0  # counts up whenever a state changes
         self.i = 0
         self.sock = None
         self.next_at = 0
@@ -67,7 +68,10 @@ class HAClient:
         if head.startswith(b"HTTP/1.") and b" 200 " in head.split(b"\r\n")[0]:
             try:
                 data = json.loads(body)
-                self.states[self.eid] = {"state": data.get("state"), "attributes": data.get("attributes", {})}
+                new = {"state": data.get("state"), "attributes": data.get("attributes", {})}
+                if self.states.get(self.eid) != new:
+                    self.states[self.eid] = new
+                    self.version += 1
             except ValueError:
                 self.errors += 1
         else:

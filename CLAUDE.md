@@ -24,7 +24,9 @@ mpremote run device/foo.py          # run a local file without uploading
 
 To test `hamster.py`, run a copy with debug prints via
 `timeout 30 mpremote run <copy>` and redirect the output to a file (the
-script never ends). Upload with `mpremote fs cp device/hamster.py : + reset`.
+script never ends; `mpremote run` uses the `messy/` package already on the
+device, so upload that first). Upload with
+`mpremote fs cp -r device/messy : + fs cp device/hamster.py : + reset`.
 A restart loses the agent status until the next poller round (≤30 s).
 
 ## Layout and conventions
@@ -39,7 +41,8 @@ A restart loses the agent status until the next poller round (≤30 s).
   - Pinned pipelines live in the plugin's config dir (`pipelines.json`).
   - `*.rtttl` melodies (e.g. `guybrush.rtttl`) stay on the device only.
 - `main.py` just imports `hamster.py` (Messy the pixel hamster, the current
-  focus).
+  focus). `hamster.py` is only the main loop; the rest lives in the package
+  `device/messy/` (a folder, so the launcher doesn't list its modules).
 - `launcher.py` is the parked launcher. It shows every `*.py` in the root
   except the names in `HIDDEN`; a new helper module (not an app) must be added
   there. To launch an app it writes the file name to `/ramfs/launch.txt` and
@@ -48,18 +51,31 @@ A restart loses the agent status until the next poller round (≤30 s).
   fails with v2 cards).
 - `tz.py` turns the UTC time from `ntptime` into German local time (CET/CEST).
 
-## hamster.py
+## hamster.py and messy/
 
-- Five swipe pages (`VIEWS`): scene, agents, pipelines, home, settings.
-- Messy and Clawd each run a state machine (`start`/`c_start`, random
-  `pick`/`c_pick`); `ball`, `duo` (scenes together) and `ev` (Guybrush) are
-  directors that take over both. External status overrides states: Herdr
-  agents → Clawd (`work`, `alert`, `done`), pipelines → Messy (`wheel`,
-  `broken`), but never mid-game.
-- Movement is time based (`k` = frame time / 66 ms), target ~30 fps.
-- Beeps come from per-item changes (`watch_agents`, `watch_pipes`), not from the combined status, so one agent or pipeline finishing while another still runs is heard.
+- `hamster.py`: main loop (touch, status overrides, poses, drawing, LEDs).
+  `messy/`: `gfx` (screen, palette, helpers), `sprites` (characters),
+  `actors` (state machines and `Pose`), `directors` (`Ball`, `Visit`) and
+  `duo` (`Duo`, scenes for two), `scene` (main page, particles), `pages`
+  (other pages), `herdr` (UDP status), `home` (Home Assistant), `sound`,
+  `leds`, `prefs`.
+- Five swipe pages (`pages.VIEWS`): scene, agents, pipelines, home, settings.
+  The pages other than the scene are only redrawn when their key (data plus
+  a blink tick) changes, and `presto.update()` is skipped otherwise.
+- Messy and Clawd are `Actor`s with a state machine (`start`, random `pick`).
+  Each frame their `Pose` is reset, filled by `act()` for their own states,
+  then by the director if one runs. Directors (`Ball`, `Duo`, `Visit`) take
+  over both: `update()` moves and poses them, `draw()` adds extras, `mood()`
+  sets the LEDs. External status overrides states: Herdr agents → Clawd
+  (`work`, `alert`, `done`), pipelines → Messy (`wheel`, `broken`), but never
+  during a director (an agent asking a question ends `Ball` and `Duo`).
+- Movement is time based (`k` = frame time / 66 ms), target ~30 fps. Use
+  `time.ticks_diff`/`ticks_add` for times, `ticks_ms` wraps after ~12 days.
+- Particles age on every page (`scene.update_particles`), but are only drawn
+  on the scene.
+- Beeps come from per-item changes (`herdr._watch_agents`, `_watch_pipes`), not from the combined status, so one agent or pipeline finishing while another still runs is heard.
 - Settings (`leds` = status LEDs, `anim_leds` = mood and scene lights, `sounds`, `anim`, `music`) are in `settings.json` on the device.
-  Character squeaks (`CHARACTER_SOUNDS`) are deliberately off; `sounds` only
+  Character squeaks (`sound.CHARACTER_SOUNDS`) are deliberately off; `sounds` only
   covers pipeline and Claude beeps, `anim` the scene sounds (fight).
 
 Performance on the Presto (measured, keep in mind when adding things):
@@ -67,6 +83,8 @@ Performance on the Presto (measured, keep in mind when adding things):
 - Building a dict with a few hundred entries takes ~100 ms. Sprites are built
   once into grids, turned into colour runs (`runs_from_grid`) and cached; small
   art goes through `draw_art`, which caches runs too. Rectangles are cheap.
+- Connect WiFi only after `Presto()` is created (it resets the radio), and
+  retry: the first attempt right after boot can fail (`keep_wifi`).
 - There is no `_thread` in this firmware. Network I/O must not block:
   `haclient.py` spreads each HTTP request over frames with non-blocking
   sockets. HTTPS to HA takes 1-3 s per request, so it uses plain HTTP on the LAN.

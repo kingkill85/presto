@@ -14,6 +14,7 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 | --- | --- |
 | `main.py` | Boots straight into `hamster.py`. |
 | `hamster.py` | Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot). See below. |
+| `messy/` | The modules behind `hamster.py`: characters, scenes, pages, status, sound, LEDs. |
 | `haclient.py` | Non-blocking Home Assistant REST client (one small step per frame). |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
 | `launcher.py` | Pixel-art launcher (currently not started at boot): 240×240, PICO-8 palette, 3×3 tiles, swipe between pages. Lists every `*.py` except the helpers in `HIDDEN`. |
@@ -121,6 +122,7 @@ Without `"pinned"` only the spaces are shown. Needs `glab`/`gh` logged in.
 cp device/secrets.example.py device/secrets.py      # fill in, never commit
 cp device/ha_config.example.py device/ha_config.py  # optional: Home Assistant
 mpremote fs cp device/*.py :
+mpremote fs cp -r device/messy :
 mpremote fs cp guybrush.rtttl :                     # optional: your own melody
 mpremote reset
 ```
