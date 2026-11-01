@@ -57,6 +57,7 @@ A restart loses the agent status until the next poller round (≤30 s).
   agents → Clawd (`work`, `alert`, `done`), pipelines → Messy (`wheel`,
   `broken`), but never mid-game.
 - Movement is time based (`k` = frame time / 66 ms), target ~30 fps.
+- Beeps come from per-item changes (`watch_agents`, `watch_pipes`), not from the combined status, so one agent or pipeline finishing while another still runs is heard.
 - Settings (`leds` = status LEDs, `anim_leds` = mood and scene lights, `sounds`, `anim`, `music`) are in `settings.json` on the device.
   Character squeaks (`CHARACTER_SOUNDS`) are deliberately off; `sounds` only
   covers pipeline and Claude beeps, `anim` the scene sounds (fight).

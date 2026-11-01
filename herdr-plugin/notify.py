@@ -2,7 +2,8 @@
 """Send the combined status of all Herdr agents to the Presto.
 
 Runs on every agent status change. Picks the most important status across all
-agents (blocked > done > working > idle) and sends it, together with a short
+agents (blocked > working > done > idle: as long as one agent still works, the
+Presto shows work) and sends it, together with a short
 list of all agents, as a small JSON UDP packet. By default it is broadcast on
 the local network, so the Presto's IP doesn't need to be known. To send to a fixed address instead, put
 "192.168.1.50" (or "host:port") into the file `target` in the plugin's config
@@ -16,7 +17,7 @@ import subprocess
 import time
 
 PORT = 47474
-PRIORITY = ("blocked", "done", "working", "idle", "unknown")
+PRIORITY = ("blocked", "working", "done", "idle", "unknown")
 MAX_LISTED = 5  # what fits on the Presto's screen
 UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
 

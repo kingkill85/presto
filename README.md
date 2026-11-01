@@ -68,7 +68,7 @@ weather, rooms (lights, temperatures, heating) and batteries below
 
 `herdr-plugin/` shows the status of your coding agents in [Herdr](https://herdr.dev)
 on the Presto. On every agent status change it broadcasts the combined status
-(blocked > done > working > idle) as UDP to port 47474. Clawd then types on a
+(blocked > working > done > idle) as UDP to port 47474. Clawd then types on a
 laptop (working), waves with a "!" while the LEDs blink and three beeps sound
 (blocked, waiting for you), or shows a green tick with a ding-dong (done).
 

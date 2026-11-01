@@ -918,7 +918,6 @@ AGENT_STALE_MS = 45 * 60 * 1000
 CLAWD_FOR = {"working": "work", "blocked": "alert", "done": "done"}
 
 agent_status = None
-heard_agent = None  # status the beeps last reacted to
 agent_list = []
 agent_rx = 0
 pipe_status = None  # running, failed, success
@@ -933,6 +932,52 @@ try:
     wlan.connect(WIFI_SSID, WIFI_PASSWORD)
 except Exception:
     pass
+
+
+agent_seen = {}  # (workspace, kind) -> last status, for the beeps
+agent_beep = None  # "done" or "alert", played by the main loop
+
+
+def watch_agents(entries):
+    """Beep when one agent finishes or asks something, even while another
+    one keeps working (the combined status wouldn't change then)."""
+    global agent_seen, agent_beep
+    seen = {}
+    for a in entries:
+        key = (a.get("w"), a.get("k"))
+        s, before = a.get("s"), agent_seen.get(key)
+        seen[key] = s
+        if before is None or s == before:
+            continue
+        if s == "blocked":
+            agent_beep = "alert"
+        elif before == "working" and s in ("done", "idle") and agent_beep != "alert":
+            agent_beep = "done"
+    agent_seen = seen
+
+
+pipe_seen = {}  # (space, MR or branch) -> last status, for the beeps
+pipe_beep = None  # "pipe_start", "pipe_ok" or "pipe_fail", played by the main loop
+WAITING_STATES = ("running", "pending", "created", "preparing", "waiting_for_resource", "scheduled")
+
+
+def watch_pipes(items):
+    """Beep for each pipeline on its own, also while others keep running."""
+    global pipe_seen, pipe_beep
+    seen = {}
+    for it in items:
+        key = (it.get("w"), it.get("n"))
+        s, before = it.get("s"), pipe_seen.get(key)
+        seen[key] = s
+        if before is None or s == before:
+            continue
+        if s == "failed":
+            pipe_beep = "pipe_fail"  # the most important one wins
+        elif s == "success" and before in WAITING_STATES and pipe_beep != "pipe_fail":
+            pipe_beep = "pipe_ok"
+        elif s in WAITING_STATES and before not in WAITING_STATES and not pipe_beep:
+            pipe_beep = "pipe_start"
+    pipe_seen = seen
 
 
 def poll_agent(now):
@@ -957,10 +1002,13 @@ def poll_agent(now):
             if msg.get("type") == "pipelines":
                 pipe_status = msg["status"] if msg["status"] != "none" else None
                 pipe_items = msg.get("items", [])
+                watch_pipes(pipe_items)
                 pipe_rx = now
                 continue
             agent_status = msg["status"]
-            agent_list = msg.get("list", [])
+            new_list = msg.get("list", [])
+            watch_agents(new_list)
+            agent_list = new_list
             agent_rx = now
         except (ValueError, KeyError, TypeError):
             pass
@@ -2238,13 +2286,12 @@ while True:
         if shown_pipe == "running" and pipe_status == "success":
             start("happy")  # all green: cheer
             cheer_until = time.ticks_add(now, 4000)
-            play("pipe_ok")
         elif shown_pipe == "running" and pipe_status == "failed":
             start("startle")
-            play("pipe_fail")
-        elif pipe_status == "running" and shown_pipe is not None:
-            play("pipe_start")
         shown_pipe = pipe_status
+    if pipe_beep:  # set by watch_pipes, per pipeline
+        play(pipe_beep)
+        pipe_beep = None
     wanted_h = {"running": "wheel", "failed": "broken"}.get(pipe_status)
     if state not in ("ball", "event", "duo", "happy", "startle"):
         if wanted_h and state != wanted_h:
@@ -2259,12 +2306,9 @@ while True:
         poll_agent(now)
         sync_clock(now)
     ha_poll(now)
-    if agent_status != heard_agent:  # beep on real changes only
-        if heard_agent == "working" and agent_status in ("done", "idle"):
-            play("agent_done")
-        elif agent_status == "blocked" and heard_agent is not None:
-            play("agent_alert")
-        heard_agent = agent_status
+    if agent_beep:  # set by watch_agents on real changes only
+        play("agent_alert" if agent_beep == "alert" else "agent_done")
+        agent_beep = None
     wanted = CLAWD_FOR.get(agent_status)
     if wanted == "alert" and (ball or duo):  # a question for you beats playing
         ball = duo = None
