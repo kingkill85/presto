@@ -73,7 +73,7 @@ laptop (working), waves with a "!" and three beeps sound (blocked, waiting for
 you), or shows a green tick with a ding-dong (done). With several agents, a
 bar on the right of the scene shows each one, Clawd briefly holds up a tick
 when one finishes while others still work, and the first LEDs on the back
-get one agent each (steady coral = working, green = done, blinking orange =
+get one agent each (steady blue = working, green = done, blinking orange =
 waiting for you).
 
 ```sh
