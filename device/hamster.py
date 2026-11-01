@@ -709,14 +709,13 @@ def update_leds(state, t, own=()):
 
 
 def agent_led_colours(now):
-    """One LED per agent that isn't idle: coral pulse = working, green = done,
-    blinking orange = waiting for you."""
-    pulse = 0.65 + 0.35 * math.sin(now / 400)
+    """One LED per agent that isn't idle: steady coral = working, green =
+    done, blinking orange = waiting for you (the only one that blinks)."""
     out = []
     for a in agent_list[:7]:
         s = a.get("s")
         if s == "working":
-            out.append((int(150 * pulse), int(70 * pulse), int(50 * pulse)))
+            out.append((120, 50, 34))
         elif s == "done":
             out.append((0, 170, 50))
         elif s == "blocked":
