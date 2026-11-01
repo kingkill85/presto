@@ -34,8 +34,8 @@ A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
 - **Together** they play catch and act out little scenes: a fight in a dust
   cloud that ends in a hug, a chase around the world, a dance party, sharing a
   snack, leapfrog.
-- **Guybrush** (Monkey Island 2 style fan art) walks in every few minutes,
-  shouts "BUH!" and scares both off. He brings a jingle, or your own melody
+- **Guybrush** (Monkey Island 2 style fan art) walks in every few minutes
+  while neither of them is working, shouts "BUH!" and scares both off. He brings a jingle, or your own melody
   from `guybrush.rtttl` (RTTTL ringtone format, git-ignored) on the Presto.
 - **Background:** a big pixel clock with weekday and date (NTP), the current
   weather below it, a weather symbol in the corner, a sky colour that follows
@@ -69,8 +69,11 @@ weather, rooms (lights, temperatures, heating) and batteries below
 `herdr-plugin/` shows the status of your coding agents in [Herdr](https://herdr.dev)
 on the Presto. On every agent status change it broadcasts the combined status
 (blocked > working > done > idle) as UDP to port 47474. Clawd then types on a
-laptop (working), waves with a "!" while the LEDs blink and three beeps sound
-(blocked, waiting for you), or shows a green tick with a ding-dong (done).
+laptop (working), waves with a "!" and three beeps sound (blocked, waiting for
+you), or shows a green tick with a ding-dong (done). With several agents, a
+bar on the right of the scene shows each one, Clawd briefly holds up a tick
+when one finishes while others still work, and the first LEDs on the back
+get one agent each (coral = working, green = done, blinking orange = waiting).
 
 ```sh
 herdr plugin link "$PWD/herdr-plugin"

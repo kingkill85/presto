@@ -661,7 +661,7 @@ def draw_clock(now):
 # Colours fade smoothly towards the target of the current state.
 
 led = [0.0, 0.0, 0.0]
-shown_led = None
+shown_led = [None] * 7  # what each LED shows right now
 
 
 def led_target(state, t):
@@ -690,23 +690,40 @@ def led_target(state, t):
     return (50 + 15 * wave, 25 + 8 * wave, 4)  # warm amber
 
 
-def update_leds(state, t):
-    global shown_led
-    if state is None:  # switched off
-        if shown_led != (0, 0, 0):
-            for i in range(7):
-                presto.set_led_rgb(i, 0, 0, 0)
-            shown_led = (0, 0, 0)
-        return
-    target = led_target(state, t)
-    speed = 0.5 if state in ("happy", "startle", "alert", "brawl", "dance") else 0.08
+def update_leds(state, t, own=()):
+    """All LEDs fade to the colour of `state` (None: off); `own` gives single
+    LEDs their own colour (one per agent), None leaves that LED to `state`."""
+    if state is None:
+        target, speed = (0, 0, 0), 0.3
+    else:
+        target = led_target(state, t)
+        speed = 0.5 if state in ("happy", "startle", "alert", "brawl", "dance") else 0.08
     for i in range(3):
         led[i] += (target[i] - led[i]) * speed
-    rgb = tuple(int(c) for c in led)
-    if rgb != shown_led:
-        for i in range(7):
+    base = tuple(int(c) for c in led)
+    for i in range(7):
+        rgb = own[i] if i < len(own) and own[i] else base
+        if rgb != shown_led[i]:
             presto.set_led_rgb(i, *rgb)
-        shown_led = rgb
+            shown_led[i] = rgb
+
+
+def agent_led_colours(now):
+    """One LED per agent that isn't idle: coral pulse = working, green = done,
+    blinking orange = waiting for you."""
+    pulse = 0.65 + 0.35 * math.sin(now / 400)
+    out = []
+    for a in agent_list[:7]:
+        s = a.get("s")
+        if s == "working":
+            out.append((int(150 * pulse), int(70 * pulse), int(50 * pulse)))
+        elif s == "done":
+            out.append((0, 170, 50))
+        elif s == "blocked":
+            out.append((230, 140, 0) if (now // 400) % 2 == 0 else (20, 10, 0))
+        else:
+            out.append(None)
+    return out
 
 
 # --- sounds ----------------------------------------------------------------
@@ -935,6 +952,7 @@ except Exception:
 
 
 agent_seen = {}  # (workspace, kind) -> last status, for the beeps
+done_flash_until = 0  # Clawd holds up a tick when one agent is done
 agent_beep = None  # "done" or "alert", played by the main loop
 
 
@@ -1539,6 +1557,28 @@ def draw_home(now):
         display.set_pen(FAIL_PEN if (now // 500) % 2 else DIM_PEN)
         display.text(text[:38], 10, 218, -1, 1)
     draw_page_dots(3)
+
+
+RING_SMALL = (".#.", "#.#", ".#.")
+
+
+def draw_agent_bar(now):
+    """One small icon per agent on the right edge of the scene."""
+    if not agent_list:
+        return
+    x, y = WIDTH - 15, 36
+    for a in agent_list[:5]:
+        s = a.get("s")
+        if s == "working":
+            draw_art(SPARK if (now // 150) % 2 else SPARK_X, x, y, 3, CLAWD_PEN)
+        elif s == "done":
+            draw_art(TICK, x - 1, y, 2, TICK_PEN)
+        elif s == "blocked":
+            if (now // 400) % 2 == 0:
+                draw_art(EXCL, x - 1, y - 1, 2, ALERT_PEN)
+        else:
+            draw_art(RING_SMALL, x, y, 3, IDLE_PEN)
+        y += 14
 
 
 def draw_agents(now):
@@ -2253,7 +2293,8 @@ while True:
 
     if ball:
         update_ball(now)
-    elif ev is None and not duo and state not in ("wheel", "broken") and time.ticks_diff(now, next_visit) > 0:
+    elif (ev is None and not duo and state not in ("wheel", "broken") and c_state not in ("work", "alert")
+          and time.ticks_diff(now, next_visit) > 0):  # only when neither is busy working
         ev = {"phase": "enter", "t0": now, "gx": -GB_W * GB - 4}
         play_music(guybrush_tune())
         start("event")
@@ -2308,6 +2349,8 @@ while True:
     ha_poll(now)
     if agent_beep:  # set by watch_agents on real changes only
         play("agent_alert" if agent_beep == "alert" else "agent_done")
+        if agent_beep == "done":
+            done_flash_until = time.ticks_add(now, 2500)
         agent_beep = None
     wanted = CLAWD_FOR.get(agent_status)
     if wanted == "alert" and (ball or duo):  # a question for you beats playing
@@ -2523,7 +2566,11 @@ while True:
         tap = (ct // 110) % 4
         c_arms = (5 if tap == 0 else 4, 5 if tap == 2 else 4)
         c_bob = 1 if (ct // 2200) % 4 == 3 else 0
-        if (ct // 2600) % 3 == 2:
+        if time.ticks_diff(done_flash_until, now) > 0:  # one agent done, others still work
+            c_eyes, c_look, c_bob = "happy", 0, 0
+            c_arms = (True, 4)
+            bubble = "tick"
+        elif (ct // 2600) % 3 == 2:
             c_eyes, c_look = "open", 1  # glance up and think
             think_dots = 1 + (ct // 400) % 4
     elif c_state == "alert":  # waiting for an answer: wave and jump
@@ -2610,6 +2657,7 @@ while True:
         draw_sky(now)
         draw_clock(now)
         draw_weather_line()
+        draw_agent_bar(now)
         in_wheel = state in ("wheel", "broken")
         if in_wheel:
             draw_wheel_back(WHEEL_CX, -wheel_turn if state == "wheel" else 0.3)
@@ -2712,26 +2760,23 @@ while True:
         draw_page_dots(0)
 
     # LEDs: status signals (LEDS switch) beat animation lights (ANIM LIGHTS)
-    status_led = None
+    status_led, own = None, ()
     if settings["leds"]:
-        if agent_status == "blocked":
-            status_led = "alert"
-        elif pipe_status == "failed":
+        own = agent_led_colours(now)  # one LED per agent
+        if pipe_status == "failed":
             status_led = "failed"
-        elif agent_status == "done" and c_state == "done":
-            status_led = "done"
     if not settings["anim_leds"]:
-        update_leds(status_led, now)
+        update_leds(status_led, now, own)
     elif ev and ev["phase"] == "scare":
-        update_leds("startle", t)
+        update_leds("startle", t, own)
     elif duo and duo["phase"] == "brawl":
-        update_leds("brawl", now)
+        update_leds("brawl", now, own)
     elif duo and duo["kind"] == "dance" and duo["phase"] in ("groove", "finale"):
-        update_leds("dance", now)
+        update_leds("dance", now, own)
     elif status_led:
-        update_leds(status_led, now)
+        update_leds(status_led, now, own)
     else:
-        update_leds(state, t)
+        update_leds(state, t, own)
     presto.update()
     frame += 1
     elapsed = time.ticks_diff(time.ticks_ms(), now)
