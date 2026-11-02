@@ -48,7 +48,8 @@ from desk.gfx import WIDTH, presto, touch
 from desk.prefs import settings
 from desk.scene import critters, particles, reminder, scene, seasons
 from desk.scene.actors import DIRECTED, FREE, Clawd, Messy
-from desk.scene.directors import Ball, Visit, visit_due
+from desk.scene.directors import Ball
+from desk.scene.pirate import Visit, visit_due
 from desk.scene.duo import Duo
 from desk.scene.scene import WHEEL_CX
 from desk.scene.sprites import BASE_Y, C_BASE_Y, CS, S
@@ -96,6 +97,8 @@ cheer_until = 0
 BROKEN_MS = 2 * 60 * 1000  # how long Messy sits in the broken wheel after a failure
 last_pipe = None  # pipeline status of the last frame
 failed_at = None  # when the last pipeline failed
+DONE_MS = 2 * 60 * 1000  # how long Clawd holds up the tick: a finished agent nobody looked at stays "done"
+done_at = None  # when the combined agent status turned "done"
 frame = 0
 
 
@@ -145,7 +148,7 @@ def next_state(actor, other, now):
     Not while a status wants it (wheel, laptop): no game may start then. At
     night they just sleep."""
     global director
-    if (messy_wanted(now) if actor is messy else clawd_wanted()):
+    if (messy_wanted(now) if actor is messy else clawd_wanted(now)):
         actor.start("idle")  # follow_pipelines / follow_agents take over right after
         return
     if seasons.bedtime(now):
@@ -195,9 +198,17 @@ def messy_wanted(now):
     return wanted
 
 
-def clawd_wanted():
-    """work, alert, done or None, from the agent status."""
-    return CLAWD_FOR.get(herdr.agent_status)
+def clawd_wanted(now):
+    """work, alert, done or None, from the agent status. "done" only for
+    DONE_MS: it stays until you look at the agent in Herdr, maybe for hours."""
+    global done_at
+    wanted = CLAWD_FOR.get(herdr.agent_status)
+    if wanted != "done":
+        done_at = None
+        return wanted
+    if done_at is None:
+        done_at = now
+    return wanted if time.ticks_diff(now, done_at) < DONE_MS else None
 
 
 def showing_failure(now):
@@ -208,13 +219,14 @@ def showing_failure(now):
 
 def follow_agents(now):
     """Agent status takes over Clawd. A question for you even ends a game."""
-    global director
+    global director, done_at
     if herdr.agent_beep:
         sound.play("agent_alert" if herdr.agent_beep == "alert" else "agent_done")
         if herdr.agent_beep == "done":
             clawd.flash_until = time.ticks_add(now, 2500)
+            done_at = None  # one more finished: the tick again for DONE_MS
         herdr.agent_beep = None
-    wanted = clawd_wanted()
+    wanted = clawd_wanted(now)
     if wanted == "alert" and director and director.interruptible:
         director = None
         messy.start("idle")

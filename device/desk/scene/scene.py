@@ -296,11 +296,32 @@ def draw_wheel_rim(cx, shift, broken):
 
 # --- agent icons -------------------------------------------------------------------
 
+# Two columns of 8 between the clock and the characters' heads (Clawd's top
+# is at C_BASE_Y); more agents: one icon per status with the number.
+AGENT_ROWS = 8
+AGENT_ICONS = 2 * AGENT_ROWS
+AGENT_PENS = {"working": CLAWD_PEN, "done": TICK_PEN, "blocked": ALERT_PEN}
+
+
 def draw_agent_bar(now):
-    """One small icon per agent on the right edge of the scene."""
-    x, y = WIDTH - 15, 36
-    for a in herdr.agent_list[:5]:
-        s = a.get("s")
+    """One small icon per agent on the right edge of the scene, a second
+    column left of it when the first is full; with many agents one per status
+    (waiting, working, done, idle) with their number."""
+    agents = herdr.agent_list
+    if len(agents) > AGENT_ICONS:
+        counts = {}
+        for a in agents:
+            s = a.get("s") if a.get("s") in ("blocked", "working", "done") else "idle"
+            counts[s] = counts.get(s, 0) + 1
+        groups = [(s, counts[s]) for s in ("blocked", "working", "done", "idle") if s in counts]
+    else:
+        groups = [(a.get("s"), 1) for a in agents]
+    for i, (s, n) in enumerate(groups):
+        x, y = WIDTH - 15 - (i // AGENT_ROWS) * 14, 36 + (i % AGENT_ROWS) * 14
+        if n > 1:
+            num = str(n)
+            display.set_pen(AGENT_PENS.get(s, IDLE_PEN))  # in the icon's colour
+            display.text(num, x - 3 - display.measure_text(num, 1), y + 1, -1, 1)
         if s == "working":
             draw_art(SPARK if (now // 150) % 2 else SPARK_X, x, y, 3, CLAWD_PEN)
         elif s == "done":
@@ -310,14 +331,17 @@ def draw_agent_bar(now):
                 draw_art(EXCL, x - 1, y - 1, 2, ALERT_PEN)
         else:
             draw_art(RING_SMALL, x, y, 3, IDLE_PEN)
-        y += 14
+
+
+PIPE_ROWS = 6  # two columns of 6 between the weather symbol and the wheel's rim
 
 
 def draw_pipe_bar(now):
     """One small icon per pipeline that ran since boot, with its last status,
-    on the left edge of the scene below the weather symbol."""
-    x, y = 6, 46
-    for _, s in herdr.recent_pipes:
+    on the left edge of the scene below the weather symbol, a second column
+    right of it when the first is full (herdr keeps 2 * PIPE_ROWS)."""
+    for i, (_, s) in enumerate(herdr.recent_pipes):
+        x, y = 6 + (i // PIPE_ROWS) * 14, 46 + (i % PIPE_ROWS) * 14
         if s == "running":
             draw_art(GEAR_A if (now // 200) % 2 else GEAR_B, x, y, 2, FUR_PEN)
         elif s == "failed":
@@ -330,7 +354,6 @@ def draw_pipe_bar(now):
             draw_art(CLOCK, x, y, 2, WHEEL_PEN)
         else:  # canceled, skipped
             draw_art(SLASH, x, y, 2, IDLE_PEN)
-        y += 14
 
 
 # --- things the characters hold -----------------------------------------------------

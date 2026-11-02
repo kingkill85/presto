@@ -23,6 +23,7 @@ pipe_status = None  # combined: running, failed, success
 pipe_items = []  # [{"w": space, "n": MR or branch, "s": status, ...}, ...]
 pipe_rx = 0
 day = None  # today's daily note: {"date", "note": 0/1, "place", "events": [{"t", "n", "x"}], "tasks": [{"n", "x"}]}
+usage = None  # Claude's limits: {"ts", "5h": {"p": percent, "r": "18:00"}, "7d": {...}}
 
 # Beeps come from changes of single agents and pipelines, not from the combined
 # status, so one finishing while another keeps running is heard too. The main
@@ -35,7 +36,7 @@ _pipe_seen = {}  # (space, MR or branch) -> last status
 # Pipelines seen running or waiting since boot, with their last status, for
 # the icons in the scene: [[(space, MR or branch), status], ...], oldest first
 recent_pipes = []
-MAX_RECENT = 5
+MAX_RECENT = 12  # two columns in the scene (scene.PIPE_ROWS)
 
 _wlan = network.WLAN(network.STA_IF)
 _sock = None
@@ -102,6 +103,7 @@ AGENT_ORDER = ("blocked", "working", "done", "idle", "unknown")  # the combined 
 _agents = {}  # src -> [status, list, received]
 _pipes = {}  # src -> [status, items, received]
 _days = {}  # src -> [message, received]
+_usage = {}  # src -> [message, received]; the limits are per account, the newest wins
 
 
 def _urgency(item):
@@ -111,19 +113,35 @@ def _urgency(item):
 
 def _merge():
     """The combined status of all computers."""
-    global agent_status, agent_list, pipe_status, pipe_items, pipe_rx, day
+    global agent_status, agent_list, pipe_status, pipe_items, pipe_rx, day, usage
     agents, states = [], []
     for src in sorted(_agents):
         status, items, _ = _agents[src]
         agents += items
         states.append(status)
     agent_status = next((s for s in AGENT_ORDER if s in states), None)
+    # waiting for you and working first: the pages, icons and LEDs only have
+    # room for the first few, and with several computers a busy agent could
+    # otherwise fall off the end
+    rank = {s: i for i, s in enumerate(AGENT_ORDER)}
+    agents = [agents[i] for i in sorted(range(len(agents)), key=lambda i: (rank.get(agents[i].get("s"), 9), i))]
     _watch_agents(agents)
     agent_list = agents
-    items, states, pipe_rx = [], [], 0
-    for src in sorted(_pipes):
+    # two computers with the same repo open report the same pipelines: the
+    # newest report of each wins (same pipeline id, or same space, name and title)
+    items, states, pipe_rx, seen = [], [], 0, {}
+    for src in sorted(_pipes, key=lambda src: _pipes[src][2]):
         status, its, rx = _pipes[src]
-        items += its
+        for it in its:
+            keys = [k for k in (it.get("i"), (it.get("w"), it.get("n"), it.get("t"))) if k]
+            at = next((seen[k] for k in keys if k in seen), None)
+            if at is None:
+                at = len(items)
+                items.append(it)
+            else:
+                items[at] = it
+            for k in keys:
+                seen[k] = at
         states.append(status)
         pipe_rx = rx
     items.sort(key=_urgency)  # running ones first, then failed (sort is stable)
@@ -135,12 +153,19 @@ def _merge():
         recent_pipes.clear()
     notes = sorted(_days.values(), key=lambda v: (bool(v[0].get("note")), v[1]))  # one with a note wins
     day = notes[-1][0] if notes else None
+    newest = sorted(_usage.values(), key=lambda v: v[0].get("ts", 0))
+    usage = newest[-1][0] if newest else None
 
 
 def _receive(msg, now):
     src = msg.get("src", "")
     kind = msg.get("type")
-    if kind == "day":
+    if kind == "usage":
+        if "5h" in msg or "7d" in msg:
+            _usage[src] = [msg, now]
+        else:  # Herdr closed there
+            _usage.pop(src, None)
+    elif kind == "day":
         if msg.get("date"):
             _days[src] = [msg, now]
         else:  # no date: Herdr closed there
@@ -181,7 +206,8 @@ def poll(now):
             changed = True
         except (ValueError, KeyError, TypeError):
             pass
-    for table, stale_ms in ((_agents, AGENT_STALE_MS), (_pipes, PIPE_STALE_MS), (_days, PIPE_STALE_MS)):
+    for table, stale_ms in ((_agents, AGENT_STALE_MS), (_pipes, PIPE_STALE_MS), (_days, PIPE_STALE_MS),
+                            (_usage, PIPE_STALE_MS)):
         for src in [src for src, v in table.items() if time.ticks_diff(now, v[-1]) > stale_ms]:
             del table[src]
             changed = True

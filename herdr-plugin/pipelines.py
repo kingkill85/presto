@@ -17,7 +17,7 @@ the computer's name, so the Presto can show several computers together:
 
   {"type": "pipelines", "src": "myhost", "status": "running|failed|success|none",
    "items": [{"w": "myspace", "n": "!42", "t": "title", "s": "running",
-              "p": "3/5", "d": "4m", "a": "12m", "f": "test_backend"}, ...]}
+              "p": "3/5", "d": "4m", "a": "12m", "f": "test_backend", "i": 123456}, ...]}
 
 Normally started and kept alive by the Herdr plugin (poller_ctl.py); it stops
 by itself when the Herdr server is gone. glab/gh must be logged in.
@@ -26,8 +26,9 @@ by itself when the Herdr server is gone. glab/gh must be logged in.
   python3 pipelines.py --once          # send once and print the payload
   python3 pipelines.py --target 192.168.1.50
 
-It also sends the Herdr agent status (notify.py sends it on every change) and
-today's daily note (daynote.py): appointments and tasks. Between the rounds
+It also sends the Herdr agent status (notify.py sends it on every change),
+today's daily note (daynote.py): appointments and tasks, and Claude's usage
+limits (usage.py). Between the rounds
 everything goes out again every few seconds, so a Presto that just started
 shows it at once.
 """
@@ -156,6 +157,7 @@ def gitlab_me(host):
 
 def gitlab_describe(host, project, pipeline, item):
     item["s"] = pipeline["status"]
+    item["i"] = pipeline["id"]  # the same pipeline from two computers is shown once
     jobs = gitlab(host, project, f"pipelines/{pipeline['id']}/jobs?per_page=100")
     counted = [j for j in jobs if j["status"] not in ("manual", "skipped", "canceled")]
     if counted:
@@ -213,6 +215,7 @@ GH_CONCLUSION = {"success": "success", "failure": "failed", "timed_out": "failed
 
 
 def github_describe(project, run, item):
+    item["i"] = run["id"]
     if run["status"] == "completed":
         item["s"] = GH_CONCLUSION.get(run.get("conclusion"), "success")
     else:
@@ -354,6 +357,13 @@ def day_payload(setting):
     return json.dumps(dict(daynote.collect(folder), src=SOURCE), separators=(",", ":")).encode()
 
 
+def usage_payload():
+    """Claude's usage limits as saved by the status line; None without."""
+    import usage  # same directory
+    msg = usage.collect(SOURCE)
+    return json.dumps(msg, separators=(",", ":")).encode() if msg else None
+
+
 def send_agents(sock, target):
     try:
         sock.sendto(agent_payload(), (target, PORT))
@@ -385,7 +395,8 @@ def main():
                 # and Messy don't keep working after Herdr was closed
                 for msg in ({"src": SOURCE, "status": "none", "agents": 0, "count": 0, "title": "", "list": []},
                             {"type": "pipelines", "src": SOURCE, "status": "none", "items": []},
-                            {"type": "day", "src": SOURCE, "date": None, "note": 0, "events": [], "tasks": []}):
+                            {"type": "day", "src": SOURCE, "date": None, "note": 0, "events": [], "tasks": []},
+                            {"type": "usage", "src": SOURCE}):
                     for _ in range(3):
                         sock.sendto(json.dumps(msg).encode(), (args.target, PORT))
                         time.sleep(0.05)
@@ -408,6 +419,15 @@ def main():
                             print(day.decode())
                 except Exception as e:
                     print(f"daily note: {e}", flush=True)
+            try:
+                use = usage_payload()
+                if use:
+                    latest.append(use)
+                    sock.sendto(use, (args.target, PORT))
+                    if args.once:
+                        print(use.decode())
+            except Exception as e:
+                print(f"usage: {e}", flush=True)
             if args.once:
                 print(payload.decode())
             else:

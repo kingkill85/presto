@@ -36,8 +36,13 @@ A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
   leaves, watering a flower, ice cream).
 - **Visitors:** a bird that sometimes lands on Clawd's head, and now and then
   a snail crawling across the meadow.
-- **Guybrush** (Monkey Island 2 style fan art) walks in every few minutes
-  while neither of them is working, shouts "BUH!" and scares both off. He brings a jingle, or your own melody
+- **Guybrush** (Monkey Island 2 style fan art) comes by now and then (every 30 to 60
+  minutes, so it stays special) while neither of them is working. He introduces himself as a mighty
+  pirate (Clawd sometimes gets his name wrong) and then, with little nods to the games:
+  shouts "BUH!" and scares both off; brings a treasure map, Messy digs up the chest and the
+  treasure is... a T-shirt; points at a three-headed monkey and steals Clawd's coffee; fights Clawd
+  (sabre against fork) with insults; or holds a spitting contest that Messy wins with a seed from his
+  cheeks. He brings a jingle, or your own melody
   from `guybrush.rtttl` (RTTTL ringtone format, git-ignored) on the Presto.
 - **Background:** a big pixel clock with weekday and date (NTP), the next
   appointment of the day below it, the weather symbol top left, temperature
@@ -57,8 +62,10 @@ Swipe left or right through seven pages:
 
 1. the scene
 2. **HEUTE**: today's appointments and tasks from the daily note
-3. **AGENTS**: the coding agents in Herdr and their status
-4. **PIPELINES**: CI pipelines of the active Herdr spaces
+3. **AGENTS**: the coding agents in Herdr and their status, the ones waiting for you and working
+   first; with many agents the idle ones share one line and the rows get smaller. Below them
+   Claude's usage limits (5 hours and week, see below)
+4. **PIPELINES**: CI pipelines of the active Herdr spaces; when they don't fit, the passed ones share one line and the rows get smaller
 5. **HOME**: Home Assistant weather, rooms, lights, heating, low batteries
 6. **SETTINGS**: switch status LEDs, animation lights, sounds, animation sounds and music on or off (saved in
    `settings.json` on the Presto)
@@ -128,6 +135,22 @@ Settings go into `$(herdr plugin config-dir presto.clawd)/pipelines.json`:
 ```
 
 Without `"pinned"` only the spaces are shown. Needs `glab`/`gh` logged in.
+
+## Claude usage limits
+
+The poller also sends Claude's usage limits (the 5 hour window and the week,
+with the time each resets) from `herdr-plugin/usage.py`; the AGENTS page shows
+them as two bars (green, yellow from 50 %, red from 80 %). Claude Code only
+hands them to its status line script, so that script has to save them. Add
+this to yours (needs `jq`; `$input` is the JSON Claude Code passes in):
+
+```sh
+printf '%s' "$input" | jq -c 'select(.rate_limits) | .rate_limits + {ts: now}' \
+  > ~/.cache/presto-usage.json.tmp && mv ~/.cache/presto-usage.json.tmp ~/.cache/presto-usage.json
+```
+
+The file is only as fresh as the last Claude session; a window that has reset
+since then counts as 0 %. With several computers the newest data wins.
 
 ## Deploy
 

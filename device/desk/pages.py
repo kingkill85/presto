@@ -9,7 +9,7 @@ import network
 from desk import prefs, sound
 from desk.data import ha, herdr
 from desk.gfx import (ALERT_PEN, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
-                       GEAR_B, HEIGHT, IDLE_PEN, MANUAL_PEN, PLAY, QMARK, RING,
+                       GEAR_B, HEIGHT, IDLE_PEN, MANUAL_PEN, PLAY, QMARK, RING, RING_SMALL,
                        SLASH, SPARK, SPARK_X, TEXT_PEN, TICK, TICK_PEN, WHEEL_PEN, WIDTH, display, draw_art,
                        draw_colour_art, draw_degrees, pen, presto)
 from desk.scene import scene, seasons
@@ -238,24 +238,91 @@ def draw_checkbox(x, y, done):
 
 
 # --- agents ------------------------------------------------------------------
+# herdr sorts the agents: waiting for you, working, done, idle. While they all
+# fit they get a full row each. When it gets crowded the idle ones share one
+# line at the bottom, then the rows shrink to one line, and what still doesn't
+# fit is counted in a last line. Claude's limits sit in a slim tile below.
 
 STATUS_PEN = {"working": CLAWD_PEN, "blocked": ALERT_PEN, "done": TICK_PEN, "idle": IDLE_PEN}
-MAX_AGENTS = 5
+ACTIVE = ("blocked", "working", "done")
+FULL_ROW = 38  # two lines: workspace, then kind and title
+SMALL_ROW = 22  # one line: workspace and status
+LINE = 14  # the idle line and the "+N" line
+USAGE_H = 20
 
 
 def agents_key(now):
     agents = herdr.agent_list
     if not agents:
-        return wlan.isconnected()
-    shown = agents[:MAX_AGENTS]
-    return (agents,
-            tick_if(any(a.get("s") == "working" for a in shown), now, 150),
-            tick_if(any(a.get("s") == "blocked" for a in shown), now, 400))
+        return wlan.isconnected(), herdr.usage
+    return (agents, herdr.usage,
+            tick_if(any(a.get("s") == "working" for a in agents), now, 150),
+            tick_if(any(a.get("s") == "blocked" for a in agents), now, 400))
+
+
+def agent_layout(agents, height):
+    """(row height, agents in rows, idle ones for the shared line, rest)."""
+    if len(agents) * FULL_ROW <= height:
+        return FULL_ROW, agents, [], []
+    active = [a for a in agents if a.get("s") in ACTIVE]
+    idle = [a for a in agents if a.get("s") not in ACTIVE]
+    room = height - (LINE if idle else 0)
+    if len(active) * FULL_ROW <= room:
+        return FULL_ROW, active, idle, []
+    if len(active) * SMALL_ROW <= room:
+        return SMALL_ROW, active, idle, []
+    n = max(0, (room - LINE) // SMALL_ROW)
+    return SMALL_ROW, active[:n], idle, active[n:]
+
+
+def draw_agent_icon(status, x, y, s, now, blink, colour):
+    if status == "working":
+        draw_art(SPARK if (now // 150) % 2 else SPARK_X, x + s // 3, y + s // 3, s + s // 3, colour)
+    elif status == "blocked":
+        if blink:
+            draw_art(EXCL, x, y - s * 2 // 3, s, colour)
+    elif status == "done":
+        draw_art(TICK, x, y, s, colour)
+    elif status == "idle":
+        draw_art(RING, x, y, s, colour)
+    else:
+        draw_art(QMARK, x, y - s * 2 // 3, s, colour)
+
+
+def draw_agent_row(a, y, h, now, blink):
+    status = a.get("s", "unknown")
+    colour = STATUS_PEN.get(status, MUTED)
+    draw_panel(6, y, WIDTH - 12, h - 2, ALERT_PEN if status == "blocked" and blink else None)
+    display.set_pen(colour)
+    display.rectangle(9, y + 3, 3, h - 8)
+    word = status.upper()
+    ww = display.measure_text(word, 1)
+    if h == FULL_ROW:  # line 1: workspace and status, line 2: agent kind and terminal title
+        draw_agent_icon(status, 17, y + 10, 3, now, blink, colour)
+        display.set_pen(TEXT_PEN)
+        display.text(a.get("w", "")[:(WIDTH - 60 - ww) // 12], 38, y + 6, -1, 2)
+        line = a.get("k", "")
+        if a.get("t"):
+            line = line + " - " + a["t"] if line else a["t"]
+        display.set_pen(MUTED)
+        display.text(line[:(WIDTH - 52) // 6], 38, y + 24, -1, 1)
+        ty = y + 10
+    else:
+        draw_agent_icon(status, 17, y + 5, 2, now, blink, colour)
+        display.set_pen(TEXT_PEN)
+        display.text(a.get("w", "")[:(WIDTH - 52 - ww) // 12], 34, y + 3, -1, 2)
+        ty = y + 7
+    display.set_pen(colour if status != "blocked" or blink else MUTED)
+    display.text(word, WIDTH - 14 - ww, ty, -1, 1)
 
 
 def draw_agents(now):
     agents = herdr.agent_list
     draw_header(MINI_CLAWD, 10, 8, CLAWD_PEN, "AGENTS")
+    bottom = BOTTOM
+    if herdr.usage:
+        bottom -= USAGE_H + 2
+        draw_usage(herdr.usage, bottom + 2)
     if not agents:
         draw_waiting("Waiting for Herdr...", wlan.ifconfig()[0] if wlan.isconnected() else "no WiFi yet")
         return
@@ -263,38 +330,55 @@ def draw_agents(now):
     display.set_pen(MUTED)
     display.text(n, WIDTH - 12 - display.measure_text(n, 2), 16, -1, 2)
     blink = (now // 400) % 2 == 0
-    for i, a in enumerate(agents[:MAX_AGENTS]):
-        y = 34 + i * 38
-        status = a.get("s", "unknown")
-        colour = STATUS_PEN.get(status, MUTED)
-        draw_panel(6, y, WIDTH - 12, 36, ALERT_PEN if status == "blocked" and blink else None)
-        # status stripe and icon on the left
-        display.set_pen(colour)
-        display.rectangle(9, y + 3, 3, 30)
-        ix, iy = 17, y + 10
-        if status == "working":
-            draw_art(SPARK if (now // 150) % 2 else SPARK_X, ix + 1, iy + 1, 4, colour)
-        elif status == "blocked":
-            if blink:
-                draw_art(EXCL, ix, iy - 2, 3, colour)
-        elif status == "done":
-            draw_art(TICK, ix, iy, 3, colour)
-        elif status == "idle":
-            draw_art(RING, ix, iy, 3, colour)
-        else:
-            draw_art(QMARK, ix, iy - 2, 3, colour)
-        # line 1: workspace and status, line 2: agent kind and terminal title
-        word = status.upper()
-        ww = display.measure_text(word, 1)
+    h, rows, idle, rest = agent_layout(agents, bottom - 34)
+    y = 34
+    for a in rows:
+        draw_agent_row(a, y, h, now, blink)
+        y += h
+    if rest:  # what doesn't fit, counted by status
+        counts = []
+        for s in ACTIVE:
+            c = sum(1 for a in rest if a.get("s") == s)
+            if c:
+                counts.append("%d %s" % (c, s))
         display.set_pen(TEXT_PEN)
-        display.text(a.get("w", "")[:(WIDTH - 60 - ww) // 12], 38, y + 6, -1, 2)
-        display.set_pen(colour if status != "blocked" or blink else MUTED)
-        display.text(word, WIDTH - 14 - ww, y + 10, -1, 1)
-        line = a.get("k", "")
-        if a.get("t"):
-            line = line + " - " + a["t"] if line else a["t"]
+        display.text(shorten("+ " + ", ".join(counts), (WIDTH - 24) // 6), 12, y + 3, -1, 1)
+        y += LINE
+    if idle:  # the idle ones share a line
+        names = ", ".join(a.get("w", "?") for a in idle)
+        draw_art(RING_SMALL, 12, y + 3, 2, IDLE_PEN)
         display.set_pen(MUTED)
-        display.text(line[:(WIDTH - 52) // 6], 38, y + 24, -1, 1)
+        display.text(shorten("%d idle: %s" % (len(idle), names), (WIDTH - 34) // 6), 22, y + 3, -1, 1)
+
+
+def usage_pen(p):
+    return TICK_PEN if p < 50 else ALERT_PEN if p < 80 else FAIL_PEN
+
+
+def draw_usage(usage, y):
+    """Claude's limits in a slim tile: the 5 hour window and the week, each a
+    chunky bar with the percentage and when it resets (the week: the day)."""
+    draw_panel(6, y, WIDTH - 12, USAGE_H)
+    col = (WIDTH - 12) // 2
+    for i, (key, label) in enumerate((("5h", "5H"), ("7d", "7D"))):
+        w = usage.get(key)
+        if not w:
+            continue
+        x, p = 12 + i * col, min(100, max(0, w["p"]))
+        display.set_pen(MUTED)
+        display.text(label, x, y + 7, -1, 1)
+        x += display.measure_text(label, 1) + 4
+        display.set_pen(BG)
+        display.rectangle(x, y + 4, 32, 12)
+        display.set_pen(usage_pen(p))
+        display.rectangle(x, y + 4, (32 * p // 100 + 2) // 4 * 4, 12)
+        x += 36
+        word = "%d%%" % p
+        display.text(word, x, y + 7, -1, 1)
+        if w.get("r"):
+            display.set_pen(MUTED)
+            r = w["r"].split(" ")[0] if key == "7d" else w["r"]  # the week: just the day
+            display.text(r, x + display.measure_text(word, 1) + 4, y + 7, -1, 1)
 
 
 # --- pipelines -----------------------------------------------------------------
@@ -331,6 +415,88 @@ def pipe_icon(st, x, y, colour, now):
         draw_art(SLASH, x, y, 3, colour)
 
 
+QUIET = ("success", "canceled", "skipped")  # nothing to do: share a line when it's crowded
+PIPE_ROW = 34
+PIPE_SMALL = 22
+PIPE_HEAD = 11  # space name above its rows
+SMALL_ICON = {"failed": CROSS, "success": TICK, "manual": PLAY}
+
+
+def pipe_layout(rows, spaces, height):
+    """(row height, rows to draw, quiet ones for the shared line, rest)."""
+    heads = PIPE_HEAD * len(spaces) if len(spaces) > 1 else 0
+    if len(rows) * PIPE_ROW + heads <= height:
+        return PIPE_ROW, rows, [], []
+    busy = [it for it in rows if it.get("s") not in QUIET]
+    quiet = [it for it in rows if it.get("s") in QUIET]
+    room = height - (LINE if quiet else 0)
+    busy_spaces = len(set(it.get("w", "") for it in busy))
+    if len(busy) * PIPE_ROW + (PIPE_HEAD * busy_spaces if len(spaces) > 1 else 0) <= room:
+        return PIPE_ROW, busy, quiet, []
+    if len(busy) * PIPE_SMALL <= room:
+        return PIPE_SMALL, busy, quiet, []
+    n = max(0, (room - LINE) // PIPE_SMALL)
+    return PIPE_SMALL, busy[:n], quiet, busy[n:]
+
+
+def draw_pipe_row(it, y, now, blink):
+    st = it.get("s", "")
+    colour = PIPE_PEN.get(st, IDLE_PEN)
+    draw_panel(6, y, WIDTH - 12, 32, FAIL_PEN if st == "failed" and blink else None)
+    display.set_pen(colour)
+    display.rectangle(9, y + 3, 3, 26)
+    pipe_icon(st, 17, y + 8, colour, now)
+    # right: status word, below it progress + duration (running) or age
+    word = PIPE_WORD.get(st, st.upper()[:8])
+    ww = display.measure_text(word, 1)
+    display.set_pen(colour)
+    display.text(word, WIDTH - 14 - ww, y + 5, -1, 1)
+    if st == "running" or st in WAITING:
+        info = " ".join(v for v in (it.get("p"), it.get("d")) if v)
+    else:
+        info = it["a"] + " ago" if it.get("a") else ""
+    iw = display.measure_text(info, 1)
+    display.set_pen(MUTED)
+    display.text(info, WIDTH - 14 - iw, y + 14, -1, 1)
+    # left: MR / branch big, the title (or the failed job) below
+    display.set_pen(TEXT_PEN)
+    display.text(shorten(it.get("n", ""), (WIDTH - 62 - max(ww, iw)) // 12), 38, y + 5, -1, 2)
+    if it.get("f"):
+        display.set_pen(FAIL_PEN)
+        line = "failed: " + it["f"]
+    else:
+        display.set_pen(MUTED)
+        line = it.get("t", "")
+    display.text(shorten(line, (WIDTH - 52) // 6), 38, y + 22, -1, 1)
+
+
+def draw_pipe_small(it, y, now, blink, with_space):
+    """One line: icon, MR or branch, the space, status (or progress)."""
+    st = it.get("s", "")
+    colour = PIPE_PEN.get(st, IDLE_PEN)
+    draw_panel(6, y, WIDTH - 12, PIPE_SMALL - 2, FAIL_PEN if st == "failed" and blink else None)
+    display.set_pen(colour)
+    display.rectangle(9, y + 3, 3, PIPE_SMALL - 8)
+    if st == "running":
+        art = GEAR_A if (now // 200) % 2 else GEAR_B
+    else:
+        art = SMALL_ICON.get(st, CLOCK if st in WAITING else SLASH)
+    draw_art(art, 16, y + 5, 2, colour)
+    word = it.get("p") if st == "running" and it.get("p") else PIPE_WORD.get(st, st.upper()[:8])
+    ww = display.measure_text(word, 1)
+    display.set_pen(colour)
+    display.text(word, WIDTH - 14 - ww, y + 7, -1, 1)
+    name = it.get("n", "")
+    display.set_pen(TEXT_PEN)
+    display.text(shorten(name, (WIDTH - 52 - ww) // 12), 32, y + 3, -1, 2)
+    if with_space:
+        x = 36 + display.measure_text(shorten(name, (WIDTH - 52 - ww) // 12), 2)
+        room = (WIDTH - 20 - ww - x) // 6
+        if room >= 3:
+            display.set_pen(MUTED)
+            display.text(shorten(it.get("w", ""), room), x, y + 7, -1, 1)
+
+
 def draw_pipelines(now):
     items = herdr.pipe_items
     draw_header(MINI_HAMSTER, 10, 9, FUR_PEN, "PIPELINES")
@@ -341,7 +507,9 @@ def draw_pipelines(now):
             draw_waiting("Waiting for GitLab...", "Herdr plugin: pipelines-start")
         return
     # Group rows by space (keeping the urgency order inside); with a single
-    # space its name goes into the header instead
+    # space its name goes into the header instead. When they don't all fit,
+    # the passed ones share a line, the others get one line each (with their
+    # space), and what still doesn't fit is counted.
     spaces = []
     for it in items:
         if it.get("w", "") not in spaces:
@@ -352,49 +520,38 @@ def draw_pipelines(now):
         label = shorten(spaces[0], 7)
         display.text(label, WIDTH - 12 - display.measure_text(label, 1), 20, -1, 1)
     blink = (now // 400) % 2 == 0
-    y, last_space = 32, None
-    for it in rows:
-        if len(spaces) > 1 and it.get("w", "") != last_space:
-            if y + 46 > HEIGHT - 10:
-                break
-            last_space = it.get("w", "")
-            label = last_space.upper()
-            lw = display.measure_text(label, 1)
-            display.set_pen(MUTED)
-            display.text(label, 10, y + 1, -1, 1)
-            display.rectangle(14 + lw, y + 4, WIDTH - 28 - lw, 1)
-            y += 11
-        if y + 34 > HEIGHT - 10:
-            break
-        st = it.get("s", "")
-        colour = PIPE_PEN.get(st, IDLE_PEN)
-        draw_panel(6, y, WIDTH - 12, 32, FAIL_PEN if st == "failed" and blink else None)
-        display.set_pen(colour)
-        display.rectangle(9, y + 3, 3, 26)
-        pipe_icon(st, 17, y + 8, colour, now)
-        # right: status word, below it progress + duration (running) or age
-        word = PIPE_WORD.get(st, st.upper()[:8])
-        ww = display.measure_text(word, 1)
-        display.set_pen(colour)
-        display.text(word, WIDTH - 14 - ww, y + 5, -1, 1)
-        if st == "running" or st in WAITING:
-            info = " ".join(v for v in (it.get("p"), it.get("d")) if v)
+    y = 32
+    h, shown, quiet, rest = pipe_layout(rows, spaces, BOTTOM - y)
+    last_space = None
+    for it in shown:
+        if h == PIPE_ROW:
+            if len(spaces) > 1 and it.get("w", "") != last_space:
+                last_space = it.get("w", "")
+                label = last_space.upper()
+                lw = display.measure_text(label, 1)
+                display.set_pen(MUTED)
+                display.text(label, 10, y + 1, -1, 1)
+                display.rectangle(14 + lw, y + 4, WIDTH - 28 - lw, 1)
+                y += PIPE_HEAD
+            draw_pipe_row(it, y, now, blink)
         else:
-            info = it["a"] + " ago" if it.get("a") else ""
-        iw = display.measure_text(info, 1)
-        display.set_pen(MUTED)
-        display.text(info, WIDTH - 14 - iw, y + 14, -1, 1)
-        # left: MR / branch big, the title (or the failed job) below
+            draw_pipe_small(it, y, now, blink, len(spaces) > 1)
+        y += h
+    if rest:
+        counts = {}
+        for it in rest:
+            word = PIPE_WORD.get(it.get("s", ""), "OTHER").lower()
+            counts[word] = counts.get(word, 0) + 1
         display.set_pen(TEXT_PEN)
-        display.text(shorten(it.get("n", ""), (WIDTH - 62 - max(ww, iw)) // 12), 38, y + 5, -1, 2)
-        if it.get("f"):
-            display.set_pen(FAIL_PEN)
-            line = "failed: " + it["f"]
-        else:
-            display.set_pen(MUTED)
-            line = it.get("t", "")
-        display.text(shorten(line, (WIDTH - 52) // 6), 38, y + 22, -1, 1)
-        y += 34
+        display.text(shorten("+ " + ", ".join("%d %s" % (n, w) for w, n in counts.items()), (WIDTH - 24) // 6),
+                     12, y + 3, -1, 1)
+        y += LINE
+    if quiet:
+        draw_art(TICK, 10, y + 1, 2, TICK_PEN)
+        display.set_pen(MUTED)
+        names = ", ".join(it.get("n", "") for it in quiet)
+        word = "passed" if all(it.get("s") == "success" for it in quiet) else "finished"
+        display.text(shorten("%d %s: %s" % (len(quiet), word, names), (WIDTH - 36) // 6), 24, y + 3, -1, 1)
 
 
 # --- home ----------------------------------------------------------------------

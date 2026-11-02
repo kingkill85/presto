@@ -63,8 +63,8 @@ A restart loses the agent status until the next poller round (≤30 s).
   `pages` (other pages), `apps` (app list and launch).
   `desk/data/`: `herdr` (UDP status and the daily note), `ha` (Home Assistant).
   `desk/scene/`: `scene` (main page), `sprites` (characters), `actors` (state
-  machines and `Pose`), `directors` (`Ball`, `Visit`) and `duo` (`Duo`, scenes
-  for two), `seasons` (meadow, seasonal particles, holidays), `particles`,
+  machines and `Pose`), `directors` (`Ball`), `duo` (`Duo`, scenes
+  for two), `pirate` (`Visit`: Guybrush's visits, one of `KINDS` each time, rare: `EVERY_MS`), `seasons` (meadow, seasonal particles, holidays), `particles`,
   `critters` (bird, snail), `reminder` (Guybrush before an appointment).
 - Import with `from desk.x import name` or `from desk.scene import mod` at the
   top, so the hot loop only does one lookup (no `desk.scene.x.y` chains per frame).
@@ -83,11 +83,22 @@ A restart loses the agent status until the next poller round (≤30 s).
   pipelines); afterwards they go back to sleep.
 - While a status wants an actor (wheel, laptop), its state never times out into
   a random pick, so no game or scene can start over it (`next_state`).
+- Clawd shows `done` for `DONE_MS` only (again when another agent finishes):
+  Herdr keeps an agent "done" until you look at it, maybe for hours.
 - After a failed pipeline Messy sits in the broken wheel (and the LEDs pulse
   red) for `BROKEN_MS` only, then gets out; another failure starts it again.
 - Left of the clock: one icon per pipeline that ran since boot, with its last
-  status (`herdr.recent_pipes`, max `MAX_RECENT`, oldest finished drop out).
-  Right of the clock: one icon per agent.
+  status (`herdr.recent_pipes`, max `MAX_RECENT`, oldest finished drop out),
+  in two columns of `PIPE_ROWS` (the wheel's rim is below).
+  Right of the clock: one icon per agent in up to two columns of
+  `AGENT_ROWS` (above Clawd's head), beyond that one per status with the number.
+- `herdr._merge` sorts the agents blocked, working, done, idle, so wherever
+  only the first few fit (AGENTS page, icons, LEDs) the urgent ones show.
+  The AGENTS page (`agent_layout`) gives every agent a full row while they
+  fit, then puts the idle ones into one shared line, then shrinks the rows to
+  one line, and counts the rest in a "+N" line.
+  The PIPELINES page (`pipe_layout`) does the same: passed (and canceled)
+  ones share a line, the others get one line each with their space.
 - Movement is time based (`k` = frame time / 66 ms), target ~30 fps. Use
   `time.ticks_diff`/`ticks_add` for times, `ticks_ms` wraps after ~12 days.
 - Particles age on every page (`particles.update`), but are only drawn
@@ -133,6 +144,11 @@ Performance on the Presto (measured, keep in mind when adding things):
   pipelines and daily note again every 5 s (spaced out: the Presto's radio
   only buffers a few packets, it reads them every frame). Broadcasts get lost
   now and then, the repeats make up for it.
+- `usage.py` (called by the poller) reads Claude's limits from
+  `~/.cache/presto-usage.json`, which the user's Claude Code status line
+  writes (it is the only place Claude Code exposes `rate_limits`), and sends
+  `"type": "usage"`. The Presto takes the newest `ts` of all computers and
+  shows it in a slim tile at the bottom of the AGENTS page.
 - `daynote.py` (called by the poller) reads today's note `YYYY-MM-DD.md` from
   the Obsidian vault (found via Obsidian's `obsidian.json`, so it works on every
   computer; setting `daynotes` in `pipelines.json` overrides it), `git pull

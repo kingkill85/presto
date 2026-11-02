@@ -41,9 +41,12 @@ SOUNDS = {  # (start Hz, end Hz, ms)
     "bonk": ((600, 1300, 40), (1300, 280, 90)),
     "whoosh": ((2200, 500, 220),),
     "aww": ((660, 880, 120), (0, 0, 30), (880, 1047, 180)),
+    # the pirate: sabre on fork, spitting
+    "clang": ((2600, 2000, 30), (0, 0, 15), (3200, 2400, 60)),
+    "ptui": ((700, 1600, 40), (1200, 300, 90)),
 }
 PIPE_SOUNDS = ("pipe_start", "pipe_ok", "pipe_fail", "click", "agent_done", "agent_alert", "remind")  # SOUNDS switch
-FIGHT_SOUNDS = ("grr", "pow", "bam", "bonk", "whoosh", "aww")  # ANIMATION switch (scene sounds)
+FIGHT_SOUNDS = ("grr", "pow", "bam", "bonk", "whoosh", "aww", "clang", "ptui")  # ANIMATION switch (scene sounds)
 
 # Original pirate jingle (not the game's theme): (Hz, ms), 0 is a rest
 PIRATE_JINGLE = (

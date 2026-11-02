@@ -1,5 +1,5 @@
-# Directors take over both actors for a while: the ball game and the pirate
-# visit live here, the scenes for two in duo.py. Each director has
+# Directors take over both actors for a while: the ball game lives here, the
+# scenes for two in duo.py, the pirate's visits in pirate.py. Each director has
 #   update(now, k, hp, cp)  moves both and fills in their poses; False when over
 #   draw(now)               its extras on top of the scene
 #   mood(now)               (LED mood, ms into it) or None
@@ -10,10 +10,8 @@ import random
 import time
 
 from desk import sound
-from desk.gfx import BALL_PEN, HEART_PEN, WIDTH, display, draw_bubble
-from desk.scene.actors import RUN, WALK
-from desk.scene.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_W, GB_Y, GROUND, HOME_X, S, draw_guybrush,
-                           walk_frame)
+from desk.gfx import BALL_PEN, HEART_PEN, display
+from desk.scene.sprites import BASE_Y, C_BASE_Y, CS, GROUND, S
 
 
 def walk_to(pos, target, speed, k):
@@ -128,117 +126,3 @@ class Ball:
 
     def mood(self, now):
         return None  # the "ball" state has its own
-
-
-# --- pirate visit ---------------------------------------------------------------------
-# Every few minutes a wannabe pirate walks in, shouts "BUH!" and scares both
-# off the screen. Phases: enter, scare, flee, laugh, leave, pause, return.
-
-BACK_X = 76  # where the hamster backs off to when the pirate walks in
-_next_visit = time.ticks_add(time.ticks_ms(), random.randint(60000, 180000))
-
-
-def visit_due(now):
-    return time.ticks_diff(now, _next_visit) > 0
-
-
-class Visit:
-    interruptible = False
-
-    def __init__(self, messy, clawd, now):
-        self.m, self.c = messy, clawd
-        self.phase, self.t0 = "enter", now
-        self.gx = -GB_W * GB - 4  # the pirate's x
-        sound.play_music(sound.guybrush_tune())
-        messy.start("event")
-        clawd.start("event")
-
-    def go(self, phase, now):
-        self.phase, self.t0 = phase, now
-
-    def update(self, now, k, hp, cp):
-        global _next_visit
-        m, c = self.m, self.c
-        ph, et = self.phase, time.ticks_diff(now, self.t0)
-        if ph == "enter":  # he walks in, the two nervously back away to the right
-            self.gx += 2.5 * k
-            m.x = min(BACK_X, m.x + 2 * k)
-            c.x = min(C_MAX_X, c.x + 1.2 * k)
-            if self.gx >= 4:
-                self.go("scare", now)
-        elif ph == "scare" and et > 1300:
-            self.go("flee", now)
-        elif ph == "flee":
-            m.x += 8 * k
-            c.x += 7 * k
-            if m.x > WIDTH + 10 and c.x > WIDTH + 10:
-                self.go("laugh", now)
-        elif ph == "laugh" and et > 1800:
-            self.go("leave", now)
-        elif ph == "leave":
-            self.gx -= 2.5 * k
-            if self.gx < -GB_W * GB - 4:
-                self.go("pause", now)
-        elif ph == "pause" and et > 2000:
-            self.go("return", now)
-        elif ph == "return":
-            m.x = max(HOME_X, m.x - 2.5 * k)
-            c.x = max(C_HOME_X, c.x - 2.5 * k)
-            if m.x == HOME_X and c.x == C_HOME_X:
-                _next_visit = time.ticks_add(now, random.randint(120000, 300000))
-                m.start("idle")
-                c.start("idle")
-                return False
-
-        ph, et = self.phase, time.ticks_diff(now, self.t0)
-        if ph == "enter":
-            hp.look = cp.look = -1
-            if self.gx > -40:
-                hp.eyes = cp.eyes = "wide"
-            if m.x < BACK_X:
-                hp.step, hp.jump = WALK[(m.elapsed(now) // 110) % 4]
-            if c.x < C_MAX_X:
-                cp.step, cp.jump = WALK[(c.elapsed(now) // 120) % 4]
-        elif ph == "scare":
-            hp.eyes = cp.eyes = "wide"
-            hp.paws = ((3, 8), (12, 8))
-            hp.jump = int(20 * math.sin(math.pi * min(1, et / 400)))
-            cp.arms = (True, True)
-            cp.jump = int(16 * math.sin(math.pi * min(1, max(0, et - 100) / 400)))
-        elif ph == "flee":
-            hp.eyes = cp.eyes = "wide"
-            hp.look = cp.look = 1
-            hp.step, hp.jump = RUN[(et // 70) % 4]
-            cp.step, cp.jump = RUN[(et // 70) % 4]
-        elif ph == "return":
-            hp.look = cp.look = -1
-            if m.x > HOME_X:
-                hp.step, hp.jump = WALK[(et // 110) % 4]
-            if c.x > C_HOME_X:
-                cp.step, cp.jump = WALK[(et // 120) % 4]
-        return True
-
-    def draw(self, now):
-        ph, et = self.phase, time.ticks_diff(now, self.t0)
-        if ph not in ("enter", "scare", "flee", "laugh", "leave"):
-            return
-        legs, arms, bob, hem, hair, mouth = "stand", "down", 0, 0, 0, 0
-        if ph in ("enter", "leave"):
-            legs, arms, bob, hem, hair = walk_frame(et)
-        elif ph == "scare":
-            arms, mouth = "up", 2  # shouting
-            bob = -3 if et < 150 else 0
-            hair = 1 if et < 300 else 0
-        elif ph == "laugh":
-            beat = (et // 200) % 2 == 0
-            bob, mouth = (-2, 2) if beat else (0, 1)  # shoulders shake, mouth wide open
-        draw_guybrush(self.gx, flip=ph == "leave", legs=legs, arms=arms, mouth=mouth, bob=bob, hem=hem, hair=hair)
-        if ph == "scare":
-            draw_bubble("BUH!", int(self.gx) + 50, GB_Y - 30)
-        elif ph == "laugh":
-            draw_bubble("HAR HAR!", int(self.gx) + 50, GB_Y - 30)
-
-    def mood(self, now):
-        if self.phase == "scare":
-            return "startle", time.ticks_diff(now, self.t0)
-        return None
