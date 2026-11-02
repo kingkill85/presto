@@ -224,7 +224,6 @@ APPS = {
 }
 DEFAULT = ("unknown", "slate", "yellow", "orange")
 
-P8_PENS = {name: pen(rgb) for name, rgb in P8.items()}
 MAX = 12  # what fits on the page
 
 
@@ -233,16 +232,26 @@ def _label(file):
 
 
 def _find():
+    p8 = {name: pen(rgb) for name, rgb in P8.items()}
     found = []
     for f in sorted(os.listdir("/")):
         if f.endswith(".py") and f not in HIDDEN:
             label, art, main, light, accent = APPS.get(f, (_label(f),) + DEFAULT)
-            pens = {"#": P8_PENS[main], "o": P8_PENS[light], "+": P8_PENS[accent]}
+            pens = {"#": p8[main], "o": p8[light], "+": p8[accent]}
             found.append((f, label[:11], ART[art], pens))
     return found[:MAX]
 
 
-apps = _find()  # (file, label, art, pens), once at boot: new apps show up after a reset
+_apps = None
+
+
+def get():
+    """(file, label, art, pens) per app, found on the first visit of the page
+    (not at boot, that would cost ~180 ms). New apps show up after a reset."""
+    global _apps
+    if _apps is None:
+        _apps = _find()
+    return _apps
 
 
 def launch(file):

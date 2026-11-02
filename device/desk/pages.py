@@ -6,7 +6,7 @@
 
 import network
 
-from desk import apps, prefs, sound
+from desk import prefs, sound
 from desk.data import ha, herdr
 from desk.gfx import (ALERT_PEN, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
                        GEAR_B, HEIGHT, IDLE_PEN, MANUAL_PEN, PLAY, QMARK, RING,
@@ -531,11 +531,14 @@ def apps_key(now):
 
 
 def draw_apps(now):
+    from desk import apps  # only now: compiling its icons at boot costs ~200 ms
+
     draw_header(GRID, 12, 9, MANUAL_PEN, "APPS")
-    if not apps.apps:
+    found = apps.get()
+    if not found:
         draw_waiting("NO APPS")
         return
-    for i, (_, label, art, pens) in enumerate(apps.apps):
+    for i, (_, label, art, pens) in enumerate(found):
         x, y = app_slot(i)
         draw_panel(x, y, APP_W, APP_H, TEXT_PEN if i == _starting else None)
         draw_colour_art(art, pens, x + (APP_W - 24) // 2, y + 4, 2)
@@ -544,14 +547,17 @@ def draw_apps(now):
 
 
 def tap_apps(tx, ty, now):
+    from desk import apps
+
     global _starting
-    for i in range(len(apps.apps)):
+    found = apps.get()
+    for i in range(len(found)):
         x, y = app_slot(i)
         if x <= tx < x + APP_W and y <= ty < y + APP_H:
             _starting = i
             if show("apps", now):
                 presto.update()
-            apps.launch(apps.apps[i][0])
+            apps.launch(found[i][0])
 
 
 # --- showing a page --------------------------------------------------------------
