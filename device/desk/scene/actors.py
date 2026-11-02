@@ -11,7 +11,7 @@ import random
 import time
 
 from desk import sound
-from desk.scene import sprites
+from desk.scene import seasons, sprites
 from desk.scene.particles import spawn
 from desk.scene.scene import WHEEL_CX, WHEEL_CY
 from desk.scene.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
@@ -277,7 +277,7 @@ class Messy(Actor):
             p.hole = t / 2600
             if self.every(t, 140):
                 spawn("dirt", cx + random.randint(-8, 8), GROUND - 2, random.choice((-1, 1)) * random.uniform(1, 2.5),
-                      random.uniform(-3.5, -2), 30)
+                      random.uniform(-3.5, -2), 30, seasons.soil_pen())
             return
         p.hole = 1
         if t < 3800:  # down into it

@@ -47,10 +47,11 @@ A restart loses the agent status until the next poller round (≤30 s).
 - `main.py` just imports `desk.main`, the start screen (the current focus).
   `desk/` is the whole start screen app; Messy the hamster is only one of its
   characters.
-- `launcher.py` is the parked launcher. It shows every `*.py` in the root
-  except the names in `HIDDEN` (config and `sdcard.py`); new helpers go to
-  `lib/` instead. To launch an app it writes the file name to `/ramfs/launch.txt` and
-  resets. It only works as `main.py`, since it relies on running at boot.
+- The start screen is also the launcher: its apps page (`desk/apps.py`) shows
+  every `*.py` in the root except `HIDDEN` (config and `sdcard.py`); new
+  helpers go to `lib/` instead. A tap writes the file name to
+  `/ramfs/launch.txt` and resets, `main.py` starts that app once (it removes
+  the file), so the next reset is back on the start screen.
 - SD card is mounted at `/sd` using our own `sdcard.py` (the built-in driver
   fails with v2 cards).
 - `lib/tz.py` turns the UTC time from `ntptime` into German local time (CET/CEST).
@@ -59,7 +60,7 @@ A restart loses the agent status until the next poller round (≤30 s).
 
 - `desk/main.py`: main loop (touch, status overrides, poses, drawing, LEDs).
   `desk/`: `gfx` (screen, palette, helpers), `prefs`, `sound`, `leds`,
-  `pages` (other pages).
+  `pages` (other pages), `apps` (app list and launch).
   `desk/data/`: `herdr` (UDP status and the daily note), `ha` (Home Assistant).
   `desk/scene/`: `scene` (main page), `sprites` (characters), `actors` (state
   machines and `Pose`), `directors` (`Ball`, `Visit`) and `duo` (`Duo`, scenes
@@ -67,7 +68,7 @@ A restart loses the agent status until the next poller round (≤30 s).
   `critters` (bird, snail), `reminder` (Guybrush before an appointment).
 - Import with `from desk.x import name` or `from desk.scene import mod` at the
   top, so the hot loop only does one lookup (no `desk.scene.x.y` chains per frame).
-- Six swipe pages (`pages.VIEWS`): scene, today, agents, pipelines, home, settings.
+- Seven swipe pages (`pages.VIEWS`): scene, today, agents, pipelines, home, settings, apps.
   The pages other than the scene are only redrawn when their key (data plus
   a blink tick) changes, and `presto.update()` is skipped otherwise.
 - Messy and Clawd are `Actor`s with a state machine (`start`, random `pick`).

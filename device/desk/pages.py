@@ -1,4 +1,4 @@
-# The pages next to the scene: agents, pipelines, home and settings.
+# The pages next to the scene: today, agents, pipelines, home, settings and apps.
 #
 # They hardly move, so each one is only drawn (and sent to the screen) again
 # when its key changes: the data it shows plus a clock tick for every blink or
@@ -6,17 +6,17 @@
 
 import network
 
-from desk import prefs, sound
+from desk import apps, prefs, sound
 from desk.data import ha, herdr
 from desk.gfx import (ALERT_PEN, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
                        GEAR_B, HEIGHT, IDLE_PEN, MANUAL_PEN, PLAY, QMARK, RING,
                        SLASH, SPARK, SPARK_X, TEXT_PEN, TICK, TICK_PEN, WHEEL_PEN, WIDTH, display, draw_art,
-                       draw_degrees, pen)
+                       draw_colour_art, draw_degrees, pen, presto)
 from desk.scene import scene, seasons
 from desk.scene.scene import draw_weather_icon
 
 wlan = network.WLAN(network.STA_IF)
-VIEWS = ("scene", "today", "agents", "pipelines", "home", "settings")  # swipe order
+VIEWS = ("scene", "today", "agents", "pipelines", "home", "settings", "apps")  # swipe order
 
 MINI_HAMSTER = (".#....#.", "########", "##.##.##", "########", ".######.")
 MINI_CLAWD = (".######.", ".#.##.#.", "########", ".######.", ".#.#.#.#")
@@ -24,6 +24,7 @@ HOUSE = ("..#..", ".###.", "#####", "#.#.#", "#.#.#")
 GEAR = (".#.#.", "#####", "##.##", "#####", ".#.#.")
 FLAME = ("..#..", ".##..", ".###.", "#####", ".###.")
 BULB = (".###.", "#####", "#####", ".###.", ".#.#.")
+GRID = ("##.##", "##.##", ".....", "##.##", "##.##")
 FLAME_PEN = pen((255, 120, 30))
 BULB_OFF_PEN = pen((70, 70, 90))
 
@@ -512,6 +513,47 @@ def tap_settings(tx, ty):
             sound.play("click")
 
 
+# --- apps ------------------------------------------------------------------------
+# 3 x 4 tiles, one per app (desk/apps.py). A tap lights the tile up, then the
+# Presto resets into the app.
+
+APP_COLS, APP_W, APP_H, APP_GX, APP_GY, APP_Y0 = 3, 72, 44, 8, 4, 36
+APP_X0 = (WIDTH - (APP_COLS * APP_W + (APP_COLS - 1) * APP_GX)) // 2
+_starting = None  # index of the app being started
+
+
+def app_slot(i):
+    return APP_X0 + (i % APP_COLS) * (APP_W + APP_GX), APP_Y0 + (i // APP_COLS) * (APP_H + APP_GY)
+
+
+def apps_key(now):
+    return _starting
+
+
+def draw_apps(now):
+    draw_header(GRID, 12, 9, MANUAL_PEN, "APPS")
+    if not apps.apps:
+        draw_waiting("NO APPS")
+        return
+    for i, (_, label, art, pens) in enumerate(apps.apps):
+        x, y = app_slot(i)
+        draw_panel(x, y, APP_W, APP_H, TEXT_PEN if i == _starting else None)
+        draw_colour_art(art, pens, x + (APP_W - 24) // 2, y + 4, 2)
+        display.set_pen(TEXT_PEN)
+        display.text(label, x + (APP_W - display.measure_text(label, 1)) // 2, y + 32, -1, 1)
+
+
+def tap_apps(tx, ty, now):
+    global _starting
+    for i in range(len(apps.apps)):
+        x, y = app_slot(i)
+        if x <= tx < x + APP_W and y <= ty < y + APP_H:
+            _starting = i
+            if show("apps", now):
+                presto.update()
+            apps.launch(apps.apps[i][0])
+
+
 # --- showing a page --------------------------------------------------------------
 
 PAGES = {  # view -> (key, draw)
@@ -520,6 +562,7 @@ PAGES = {  # view -> (key, draw)
     "pipelines": (pipelines_key, draw_pipelines),
     "home": (home_key, draw_home),
     "settings": (settings_key, draw_settings),
+    "apps": (apps_key, draw_apps),
 }
 _shown = None  # (view, key) on screen right now
 

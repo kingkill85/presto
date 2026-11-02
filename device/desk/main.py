@@ -27,9 +27,10 @@
 # when it's hot.
 #
 # Swipe left or right through the pages: scene, today, agents, pipelines,
-# home and settings. This file is only the main loop, the rest lives in desk/:
+# home, settings and apps (starts the other apps, see desk/apps.py). This file
+# is only the main loop, the rest lives in desk/:
 #   gfx, prefs, sound, leds   screen and palette, settings, buzzer, LEDs
-#   pages                     the pages next to the scene
+#   pages, apps               the pages next to the scene; the other apps
 #   data/herdr                agents, pipelines and the daily note from the PC
 #   data/ha                   Home Assistant
 #   scene/scene               sky, clock, wheel, characters: the main page
@@ -120,6 +121,8 @@ def handle_touch(now):
             tapped = touch_start
         elif view == "settings":
             pages.tap_settings(*touch_start)
+        elif view == "apps":
+            pages.tap_apps(touch_start[0], touch_start[1], now)
     was_touched = touch.state
     if not tapped or director:
         return

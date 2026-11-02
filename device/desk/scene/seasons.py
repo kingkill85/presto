@@ -248,11 +248,18 @@ def _winter(g, cols, rnd, deep):
         g[TOP][c] = "." if g[TOP][c] in ("W", "w", "y") else g[TOP][c]
 
 
+_drawn = None  # floor runs drawn last, for floor_patch
+_rows = {}  # id(runs) -> those runs sorted into grid rows
+
+
 def draw_meadow(now, snow):
     """Draw the meadow and the holiday things; returns the shadow colour."""
+    global _drawn, _winter_soil
     t = today(now)
     sea, deco = season(t), holiday(t)
-    blit(floor_runs(snow, sea, "eggs" if deco == "eggs" else None), 0, FLOOR_Y, 4)
+    _drawn = floor_runs(snow, sea, "eggs" if deco == "eggs" else None)
+    _winter_soil = snow or sea == "winter"
+    blit(_drawn, 0, FLOOR_Y, 4)
     if deco == "pumpkin":
         draw_pumpkin(now, is_night(t))
     elif deco == "tree":
@@ -342,3 +349,31 @@ def _firework():
     for i in range(12):
         a = i * math.pi / 6
         particles.spawn("pop", x, y, 2.2 * math.cos(a), 2.2 * math.sin(a), random.randint(10, 15), colour)
+
+
+_winter_soil = False
+
+
+def soil_pen():
+    """Colour of the soil right now (dirt thrown up while digging)."""
+    return FLOOR_PENS["e" if _winter_soil else "s"]
+
+
+def floor_patch(x, y, w, h):
+    """Draw the meadow again inside x, y, w, h (over something that sank into
+    the ground). Only the grid rows in that band, clipped to it."""
+    if _drawn is None:
+        return
+    rows = _rows.get(id(_drawn))
+    if rows is None:
+        rows = [[] for _ in range(DECO + FLOOR_ROWS)]
+        for run in _drawn:
+            rows[run[2]].append(run)
+        rows = _rows[id(_drawn)] = [tuple(r) for r in rows]
+    display.set_clip(x, y, w, h)
+    for r in range(max(0, (y - FLOOR_Y) // 4), min(len(rows), (y + h - 1 - FLOOR_Y) // 4 + 1)):
+        ry = FLOOR_Y + r * 4
+        for p, c, _, n in rows[r]:
+            display.set_pen(p)
+            display.rectangle(c * 4, ry, n * 4, 4)
+    display.remove_clip()

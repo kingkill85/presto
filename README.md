@@ -12,16 +12,15 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 
 | File | What it does |
 | --- | --- |
-| `main.py` | Boots straight into the start screen (`desk.main`). |
+| `main.py` | Boots into the start screen (`desk.main`), or once into the app picked on its apps page. |
 | `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
 | `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
-| `launcher.py` | Pixel-art launcher (currently not started at boot): 240×240, PICO-8 palette, 3×3 tiles, swipe between pages. Lists every `*.py` except the helpers in `HIDDEN`. |
 | `immich_frame.py` | Photo frame showing random photos from Immich, cached on the SD card. |
 | `sdcard.py` | SD card driver from micropython-lib ([PR #765](https://github.com/micropython/micropython-lib/pull/765), MIT). Stays in the root: `.frozen` comes before `/lib` in `sys.path`, so only here does it replace the built-in one, which fails with "timeout waiting for v2 card" ([pimoroni/presto#79](https://github.com/pimoroni/presto/issues/79)). |
 | `secrets.example.py` | Template for `secrets.py` (WiFi, Immich URL and API key, Home Assistant token). |
 
-The other apps the launcher shows are Pimoroni's examples from the firmware.
+The other apps on the apps page are Pimoroni's examples from the firmware.
 
 ## Messy and Clawd
 
@@ -54,7 +53,7 @@ A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
   the pipeline poller, see `herdr-plugin/daynote.py`). 10 and 2 minutes before
   an appointment Guybrush walks in, turns to you and reminds you.
 
-Swipe left or right through six pages:
+Swipe left or right through seven pages:
 
 1. the scene
 2. **HEUTE**: today's appointments and tasks from the daily note
@@ -63,6 +62,8 @@ Swipe left or right through six pages:
 5. **HOME**: Home Assistant weather, rooms, lights, heating, low batteries
 6. **SETTINGS**: switch status LEDs, animation lights, sounds, animation sounds and music on or off (saved in
    `settings.json` on the Presto)
+7. **APPS**: every other `*.py` in the root as a tile (except config and `sdcard.py`, see `HIDDEN` in
+   `desk/apps.py`, 12 at most). A tap resets the Presto into that app; the next reset brings the start screen back.
 
 ## Home Assistant
 

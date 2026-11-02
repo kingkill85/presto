@@ -336,7 +336,6 @@ def draw_pipe_bar(now):
 # --- things the characters hold -----------------------------------------------------
 
 HOLE_PEN = pen((40, 26, 22))
-SOIL_PEN = pen((122, 74, 50))
 MUG_PEN = pen((240, 236, 228))
 BLOCK_PENS = (pen((255, 163, 0)), pen((255, 236, 39)), pen((240, 236, 228)))
 PROP_PENS = {"w": MUG_PEN, "c": pen((90, 50, 30)), "b": pen((41, 173, 255)), "B": pen((20, 110, 190)),
@@ -400,9 +399,8 @@ def draw(now, messy, hp, clawd, cp, director, wear):
         if hp.umbrella:
             draw_leaf_umbrella(x, y + hp.bob * S)
         draw_props(x, y, hp.props)
-    if hp.sink:  # the front edge of the hole hides what's down in it
-        display.set_pen(SOIL_PEN)
-        display.rectangle(int(x), GROUND + 4, 16 * S, snap(hp.sink))
+    if hp.sink:  # the front edge of the hole (the meadow itself) hides what's down in it
+        seasons.floor_patch(int(x), GROUND + 4, 16 * S, snap(hp.sink))
     if in_wheel:
         draw_wheel_rim(WHEEL_CX, -int(messy.wheel_turn * 6) if state == "wheel" else 0, state == "broken")
         if state == "broken" and (now // 500) % 2 == 0:
