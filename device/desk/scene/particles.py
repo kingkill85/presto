@@ -8,9 +8,9 @@
 
 import math
 
-from messy.gfx import (ALERT_PEN, ANGER, CRUMB_PEN, EYE_PEN, FAIL_PEN, HEART, HEART_PEN, MANUAL_PEN, NOTE, SPARK,
+from desk.gfx import (ALERT_PEN, ANGER, CRUMB_PEN, EYE_PEN, FAIL_PEN, HEART, HEART_PEN, MANUAL_PEN, NOTE, SPARK,
                        SPARK_PEN, STAND_PEN, TICK_PEN, WHEEL_DARK_PEN, WOOL_PEN, ZED, ZED_PEN, display, draw_art, pen)
-from messy.sprites import GROUND
+from desk.scene.sprites import GROUND
 
 DIRT_PEN = pen((122, 74, 50))
 DROP_PEN = pen((90, 160, 240))

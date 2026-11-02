@@ -18,15 +18,16 @@ mpremote exec "..."                 # run code on the device
 mpremote fs ls :                    # list files on the device
 mpremote fs cp device/foo.py :      # upload
 mpremote fs cp :foo.py /tmp/        # download
-mpremote reset                      # reboot (starts hamster.py)
+mpremote reset                      # reboot (starts the start screen)
 mpremote run device/foo.py          # run a local file without uploading
 ```
 
-To test `hamster.py`, run a copy with debug prints via
+To test the start screen, run a copy of `desk/main.py` with debug prints via
 `timeout 30 mpremote run <copy>` and redirect the output to a file (the
-script never ends; `mpremote run` uses the `messy/` package already on the
+script never ends; `mpremote run` uses the `desk/` package already on the
 device, so upload that first). Upload with
-`mpremote fs cp -r device/messy : + fs cp device/hamster.py : + reset`.
+`mpremote fs cp -r device/desk device/lib : + reset`. Don't copy local
+`__pycache__` folders to the device.
 A restart loses the agent status until the next poller round (≤30 s).
 
 ## Layout and conventions
@@ -40,27 +41,32 @@ A restart loses the agent status until the next poller round (≤30 s).
     `ha_config.example.py`.
   - Pinned pipelines live in the plugin's config dir (`pipelines.json`).
   - `*.rtttl` melodies (e.g. `guybrush.rtttl`) stay on the device only.
-- `main.py` just imports `hamster.py` (Messy the pixel hamster, the current
-  focus). `hamster.py` is only the main loop; the rest lives in the package
-  `device/messy/` (a folder, so the launcher doesn't list its modules).
+- Root: only apps, config and `sdcard.py`. Shared helpers go to `lib/` (on
+  `sys.path`, so `import tz` works). Exception: `sdcard.py` stays in the root,
+  since `.frozen` (with the broken built-in `sdcard`) comes before `/lib`.
+- `main.py` just imports `desk.main`, the start screen (the current focus).
+  `desk/` is the whole start screen app; Messy the hamster is only one of its
+  characters.
 - `launcher.py` is the parked launcher. It shows every `*.py` in the root
-  except the names in `HIDDEN`; a new helper module (not an app) must be added
-  there. To launch an app it writes the file name to `/ramfs/launch.txt` and
+  except the names in `HIDDEN` (config and `sdcard.py`); new helpers go to
+  `lib/` instead. To launch an app it writes the file name to `/ramfs/launch.txt` and
   resets. It only works as `main.py`, since it relies on running at boot.
 - SD card is mounted at `/sd` using our own `sdcard.py` (the built-in driver
   fails with v2 cards).
-- `tz.py` turns the UTC time from `ntptime` into German local time (CET/CEST).
+- `lib/tz.py` turns the UTC time from `ntptime` into German local time (CET/CEST).
 
-## hamster.py and messy/
+## The start screen (desk/)
 
-- `hamster.py`: main loop (touch, status overrides, poses, drawing, LEDs).
-  `messy/`: `gfx` (screen, palette, helpers), `sprites` (characters),
-  `actors` (state machines and `Pose`), `directors` (`Ball`, `Visit`) and
-  `duo` (`Duo`, scenes for two), `scene` (main page), `seasons` (meadow,
-  seasonal particles, holidays), `particles`, `critters` (bird, snail),
-  `reminder` (Guybrush before an appointment), `pages`
-  (other pages), `herdr` (UDP status and the daily note), `home` (Home Assistant), `sound`,
-  `leds`, `prefs`.
+- `desk/main.py`: main loop (touch, status overrides, poses, drawing, LEDs).
+  `desk/`: `gfx` (screen, palette, helpers), `prefs`, `sound`, `leds`,
+  `pages` (other pages).
+  `desk/data/`: `herdr` (UDP status and the daily note), `ha` (Home Assistant).
+  `desk/scene/`: `scene` (main page), `sprites` (characters), `actors` (state
+  machines and `Pose`), `directors` (`Ball`, `Visit`) and `duo` (`Duo`, scenes
+  for two), `seasons` (meadow, seasonal particles, holidays), `particles`,
+  `critters` (bird, snail), `reminder` (Guybrush before an appointment).
+- Import with `from desk.x import name` or `from desk.scene import mod` at the
+  top, so the hot loop only does one lookup (no `desk.scene.x.y` chains per frame).
 - Six swipe pages (`pages.VIEWS`): scene, today, agents, pipelines, home, settings.
   The pages other than the scene are only redrawn when their key (data plus
   a blink tick) changes, and `presto.update()` is skipped otherwise.
@@ -105,7 +111,7 @@ Performance on the Presto (measured, keep in mind when adding things):
 - Connect WiFi only after `Presto()` is created (it resets the radio), and
   retry: the first attempt right after boot can fail (`keep_wifi`).
 - There is no `_thread` in this firmware. Network I/O must not block:
-  `haclient.py` spreads each HTTP request over frames with non-blocking
+  `lib/haclient.py` spreads each HTTP request over frames with non-blocking
   sockets. HTTPS to HA takes 1-3 s per request, so it uses plain HTTP on the LAN.
 - UDP packets from the PC are read with `recv(4096)`; the pipeline list is
   ~1 KB and a smaller buffer silently drops it.

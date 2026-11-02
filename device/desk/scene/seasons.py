@@ -12,9 +12,10 @@ import random
 import time
 import tz
 
-from messy import home, particles
-from messy.gfx import HEIGHT, WIDTH, blit, display, pen, runs_from_grid
-from messy.sprites import GROUND
+from desk.data import ha
+from desk.gfx import HEIGHT, WIDTH, blit, display, pen, runs_from_grid
+from desk.scene import particles
+from desk.scene.sprites import GROUND
 
 # --- the date ------------------------------------------------------------------
 
@@ -89,8 +90,8 @@ def bedtime(now):
 
 
 def is_night(t):
-    if home.weather_state():
-        return home.weather()[1]
+    if ha.weather_state():
+        return ha.weather()[1]
     return bool(t) and (t[3] >= 21 or t[3] < 6)
 
 
@@ -312,7 +313,7 @@ def spawn(now, k):
     t = today(now)
     if fireworks(t) and random.random() < 0.03 * k:
         _firework()
-    if home.weather()[0] in home.RAIN + home.SNOW:
+    if ha.weather()[0] in ha.RAIN + ha.SNOW:
         return  # nothing flies in the rain or snow
     sea, night = season(t), is_night(t)
     if sea == "spring" and not night:

@@ -6,12 +6,14 @@
 
 import network
 
-from messy import herdr, home, prefs, scene, seasons, sound
-from messy.gfx import (ALERT_PEN, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
+from desk import prefs, sound
+from desk.data import ha, herdr
+from desk.gfx import (ALERT_PEN, CLAWD_PEN, CLOCK, CROSS, DIM_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
                        GEAR_B, HEIGHT, IDLE_PEN, MANUAL_PEN, PLAY, QMARK, RING,
                        SLASH, SPARK, SPARK_X, TEXT_PEN, TICK, TICK_PEN, WHEEL_PEN, WIDTH, display, draw_art,
                        draw_degrees, pen)
-from messy.scene import draw_weather_icon
+from desk.scene import scene, seasons
+from desk.scene.scene import draw_weather_icon
 
 wlan = network.WLAN(network.STA_IF)
 VIEWS = ("scene", "today", "agents", "pipelines", "home", "settings")  # swipe order
@@ -397,14 +399,14 @@ def draw_pipelines(now):
 # --- home ----------------------------------------------------------------------
 
 def home_key(now):
-    return home.version(), tick_if(home.low_batteries(), now, 500)
+    return ha.version(), tick_if(ha.low_batteries(), now, 500)
 
 
 def draw_home(now):
-    person = home.person_state()
+    person = ha.person_state()
     at_home = person and person["state"] == "home"
     draw_header(HOUSE, 10, 9, TICK_PEN if at_home else IDLE_PEN, "HOME")
-    if not home.HA_TOKEN or not home.ready():
+    if not ha.HA_TOKEN or not ha.ready():
         draw_waiting("Waiting for Home Assistant...")
         return
     if person:
@@ -414,7 +416,7 @@ def draw_home(now):
     draw_weather_tile()
     draw_rooms()
     # low batteries, one at a time
-    low = home.low_batteries()
+    low = ha.low_batteries()
     if low:
         text = "BATTERIE " + low[(now // 3000) % len(low)]
         display.set_pen(FAIL_PEN if (now // 500) % 2 else MUTED)
@@ -422,8 +424,8 @@ def draw_home(now):
 
 
 def draw_weather_tile():
-    cond, night = home.weather()
-    w = home.weather_state()
+    cond, night = ha.weather()
+    w = ha.weather_state()
     draw_panel(6, 32, WIDTH - 12, 58)
     draw_weather_icon(cond, night, 18, 41, 4)
     if not w:
@@ -432,7 +434,7 @@ def draw_weather_tile():
     if a.get("temperature") is not None:
         draw_degrees("%d" % round(a["temperature"]), 82, 42, 4, TEXT_PEN)
     display.set_pen(TEXT_PEN)
-    desc = home.CONDITION_DE.get(cond, (cond or "").upper())
+    desc = ha.CONDITION_DE.get(cond, (cond or "").upper())
     display.text(desc, WIDTH - 14 - display.measure_text(desc, 1), 44, -1, 1)
     info = []
     if a.get("humidity") is not None:
@@ -447,13 +449,13 @@ def draw_weather_tile():
 def draw_rooms():
     """Per room: light bulb, name, temperature and a flame while heating."""
     y = 96
-    for label, temp_id, light_id in home.HAC.ROOMS:
-        light = home.state(light_id)
+    for label, temp_id, light_id in ha.HAC.ROOMS:
+        light = ha.state(light_id)
         on = light and light["state"] == "on"
         draw_art(BULB, 12, y + 2, 3, ALERT_PEN if on else BULB_OFF_PEN)
         display.set_pen(TEXT_PEN if on else MUTED)
         display.text(label, 34, y + 2, -1, 2)
-        st = home.state(temp_id)
+        st = ha.state(temp_id)
         if st:
             a = st["attributes"]
             value = a.get("current_temperature") if temp_id.startswith("climate.") else st["state"]

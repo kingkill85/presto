@@ -5,7 +5,7 @@
 import machine
 from presto import Buzzer
 
-from messy.prefs import settings
+from desk.prefs import settings
 
 CHARACTER_SOUNDS = False  # squeaks and munching; too much for a desk, so off
 VOLUME = 0.1  # PWM duty, 0.5 is the loudest

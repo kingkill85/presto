@@ -7,12 +7,13 @@ import ntptime
 import time
 import tz
 
-from messy import critters, herdr, home, particles, reminder, seasons
-from messy.gfx import (ALERT_PEN, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, DOT_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
+from desk.data import ha, herdr
+from desk.gfx import (ALERT_PEN, BACKGROUND, CLAWD_PEN, CLOCK, CROSS, DOT_PEN, EXCL, FAIL_PEN, FUR_PEN, GEAR_A,
                        GEAR_B, IDLE_PEN, MANUAL_PEN, PLAY, RING_SMALL, SEED_ART, SEED_PEN, SLASH, SPARK, SPARK_X,
                        STAND_PEN, TICK, TICK_PEN, WHEEL_DARK_PEN, WHEEL_PEN, WIDTH, display, draw_alert_sign,
                        draw_art, draw_bubble, draw_colour_art, draw_degrees, pen, snap)
-from messy.sprites import (BASE_Y, C_BASE_Y, CS, GROUND, HOME_X, S, draw_clawd, draw_hamster, draw_leaf_umbrella,
+from desk.scene import critters, particles, reminder, seasons
+from desk.scene.sprites import (BASE_Y, C_BASE_Y, CS, GROUND, HOME_X, S, draw_clawd, draw_hamster, draw_leaf_umbrella,
                            draw_umbrella)
 
 _wlan = network.WLAN(network.STA_IF)
@@ -60,7 +61,7 @@ def update_sky_colours(now):
     if time.ticks_diff(now, _sky_checked) < 5000:
         return
     _sky_checked = now
-    sun = home.sun_state()
+    sun = ha.sun_state()
     if not sun or sun["attributes"].get("elevation") is None:
         return
     r, g, b = sky_colour = sky_rgb(sun["attributes"]["elevation"])
@@ -70,8 +71,8 @@ def update_sky_colours(now):
 
 
 def sky_background(now):
-    cond, _ = home.weather()
-    if cond in home.THUNDER and now % 9000 < 110:
+    cond, _ = ha.weather()
+    if cond in ha.THUNDER and now % 9000 < 110:
         return FLASH_PEN
     update_sky_colours(now)
     return sky_pen or BACKGROUND
@@ -79,7 +80,7 @@ def sky_background(now):
 
 def draw_sky(now):
     """Weather: symbol top left, stars at night, rain, snow (fog: draw_fog)."""
-    cond, night = home.weather()
+    cond, night = ha.weather()
     if not cond:
         return
     if night:
@@ -89,13 +90,13 @@ def draw_sky(now):
             if (now + i * 1370) % 9000 >= 200:
                 display.rectangle(sx, sy, 2, 2)
     draw_weather_icon(cond, night, 9, 3, 3)
-    if cond in home.RAIN:
+    if cond in ha.RAIN:
         display.set_pen(RAIN_PEN)
         n = 40 if cond == "pouring" else 24
         for i in range(n):
             ry = int(i * 53 + now * 0.22) % GROUND
             display.rectangle((i * 37 + ry // 8) % WIDTH, ry, 2, 6)
-    if cond in home.SNOW:
+    if cond in ha.SNOW:
         display.set_pen(SNOW_PEN)
         for i in range(30):
             fy = int(i * 29 + now * 0.035) % GROUND
@@ -111,20 +112,20 @@ def draw_weather_icon(cond, night, x, y, s):
     if cond not in ("sunny", "clear-night", None):
         dark = cond in ("rainy", "pouring", "lightning", "lightning-rainy", "hail", "snowy-rainy")
         draw_art(CLOUD_ART, x - s, y + 3 * s, s, DARK_CLOUD_PEN if dark else WHEEL_PEN)
-    if cond in home.RAIN:
+    if cond in ha.RAIN:
         display.set_pen(RAIN_PEN)
         for i in range(4):
             display.rectangle(x + i * 3 * s, y + 9 * s, s, 2 * s)
-    if cond in home.SNOW:
+    if cond in ha.SNOW:
         display.set_pen(SNOW_PEN)
         for i in range(4):
             display.rectangle(x + i * 3 * s + s, y + 9 * s + (i % 2) * s, s, s)
-    if cond in home.THUNDER:
+    if cond in ha.THUNDER:
         draw_art(BOLT_ART, x + 4 * s, y + 7 * s, s, ALERT_PEN)
 
 
 def temperature_text():
-    t = home.temperature() if home.weather_state() else None
+    t = ha.temperature() if ha.weather_state() else None
     return "%d" % round(t) if t is not None else None
 
 
@@ -207,7 +208,7 @@ def draw_clock(now):
         x += 4 * b
     # centred between the weather symbol and the temperature in the corners;
     # long weekdays are shortened when they don't fit
-    left = 46 if home.weather_state() else 8
+    left = 46 if ha.weather_state() else 8
     corner = corner_width()
     right = corner + 12 if corner else 8
     date = "%s %d.%d." % (WEEKDAYS[t[6]], t[2], t[1])
@@ -224,7 +225,7 @@ def draw_ground(now, sky, shadows):
     """Clear to the sky colour, draw the meadow and a shadow per (x, width)."""
     display.set_pen(sky)
     display.clear()
-    shadow = seasons.draw_meadow(now, home.weather()[0] in home.SNOW)
+    shadow = seasons.draw_meadow(now, ha.weather()[0] in ha.SNOW)
     # shadows shrink while their owner is in the air
     display.set_pen(shadow)
     for cx, w in shadows:
@@ -378,7 +379,7 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     draw_next_event(now)
     draw_agent_bar(now)
     draw_pipe_bar(now)
-    if home.weather()[0] == "fog":
+    if ha.weather()[0] == "fog":
         draw_fog(now)
     reminder.draw(now)  # behind everyone
 

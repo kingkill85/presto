@@ -32,9 +32,9 @@ presto = Presto(ambient_light=False, layers=1)
 display = presto.display
 WIDTH, HEIGHT = display.get_bounds()
 
-# Helper modules and config, not apps. sdcard.py is the fixed driver from
+# Config and sdcard.py, not apps (other helpers live in lib/). sdcard.py is the fixed driver from
 # micropython-lib PR #765, it shadows the built-in one (pimoroni/presto#79).
-HIDDEN = ("main.py", "secrets.py", "tz.py", "sdcard.py")
+HIDDEN = ("main.py", "secrets.py", "ha_config.py", "sdcard.py")
 
 # PICO-8 palette
 P8 = {

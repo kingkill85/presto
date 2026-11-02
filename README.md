@@ -12,15 +12,13 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 
 | File | What it does |
 | --- | --- |
-| `main.py` | Boots straight into `hamster.py`. |
-| `hamster.py` | Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot). See below. |
-| `messy/` | The modules behind `hamster.py`: characters, scenes, pages, status, sound, LEDs. |
-| `haclient.py` | Non-blocking Home Assistant REST client (one small step per frame). |
+| `main.py` | Boots straight into the start screen (`desk.main`). |
+| `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
+| `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
 | `launcher.py` | Pixel-art launcher (currently not started at boot): 240×240, PICO-8 palette, 3×3 tiles, swipe between pages. Lists every `*.py` except the helpers in `HIDDEN`. |
 | `immich_frame.py` | Photo frame showing random photos from Immich, cached on the SD card. |
-| `tz.py` | German local time (CET/CEST) from the UTC set by `ntptime`. |
-| `sdcard.py` | SD card driver from micropython-lib ([PR #765](https://github.com/micropython/micropython-lib/pull/765), MIT). Replaces the built-in one, which fails with "timeout waiting for v2 card" ([pimoroni/presto#79](https://github.com/pimoroni/presto/issues/79)). |
+| `sdcard.py` | SD card driver from micropython-lib ([PR #765](https://github.com/micropython/micropython-lib/pull/765), MIT). Stays in the root: `.frozen` comes before `/lib` in `sys.path`, so only here does it replace the built-in one, which fails with "timeout waiting for v2 card" ([pimoroni/presto#79](https://github.com/pimoroni/presto/issues/79)). |
 | `secrets.example.py` | Template for `secrets.py` (WiFi, Immich URL and API key, Home Assistant token). |
 
 The other apps the launcher shows are Pimoroni's examples from the firmware.
@@ -68,7 +66,7 @@ Swipe left or right through six pages:
 
 ## Home Assistant
 
-`device/haclient.py` fetches entity states from Home Assistant over plain HTTP
+`device/lib/haclient.py` fetches entity states from Home Assistant over plain HTTP
 on the local network with non-blocking sockets, so the animation never stalls.
 `device/ha_config.py` lists what to show (copy it from `ha_config.example.py`,
 it stays out of git); the token goes into `secrets.py` as `HA_TOKEN`.
@@ -136,7 +134,7 @@ Without `"pinned"` only the spaces are shown. Needs `glab`/`gh` logged in.
 cp device/secrets.example.py device/secrets.py      # fill in, never commit
 cp device/ha_config.example.py device/ha_config.py  # optional: Home Assistant
 mpremote fs cp device/*.py :
-mpremote fs cp -r device/messy :
+mpremote fs cp -r device/desk device/lib :
 mpremote fs cp guybrush.rtttl :                     # optional: your own melody
 mpremote reset
 ```

@@ -10,10 +10,11 @@ import math
 import random
 import time
 
-from messy import sound, sprites
-from messy.particles import spawn
-from messy.scene import WHEEL_CX, WHEEL_CY
-from messy.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
+from desk import sound
+from desk.scene import sprites
+from desk.scene.particles import spawn
+from desk.scene.scene import WHEEL_CX, WHEEL_CY
+from desk.scene.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
 
 # Walk and run cycles: (foot lifted, hop in screen pixels)
 WALK = ((1, 3), (0, 0), (2, 3), (0, 0))

@@ -6,15 +6,16 @@ import math
 import random
 import time
 
-from messy import seasons, sound
-from messy.actors import RUN, WALK
-from messy.directors import arc, walk_to
-from messy.gfx import (ALERT_PEN, CLAWD_PEN, EYE_PEN, FUR_PEN, SEED_ART, SEED_PEN, STAND_PEN, WHEEL_PEN, WIDTH,
+from desk import sound
+from desk.gfx import (ALERT_PEN, CLAWD_PEN, EYE_PEN, FUR_PEN, SEED_ART, SEED_PEN, STAND_PEN, WHEEL_PEN, WIDTH,
                        display, draw_bubble, draw_colour_art, pen,
                        draw_alert_sign, draw_art)
-from messy.prefs import settings
-from messy.particles import spawn
-from messy.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
+from desk.prefs import settings
+from desk.scene import seasons
+from desk.scene.actors import RUN, WALK
+from desk.scene.directors import arc, walk_to
+from desk.scene.particles import spawn
+from desk.scene.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
 
 KINDS = (("fight", 3), ("chase", 3), ("dance", 2), ("snack", 2), ("leap", 2), ("hide", 2), ("season", 3))
 # (kind, weight)

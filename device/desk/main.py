@@ -1,6 +1,7 @@
-# Messy, a pixel hamster: a little desk pet in the blocky, flat style of the
-# Claude Code mascot. 240x240 (every pixel doubled), PICO-8 palette. Messy
-# idles, looks around, walks, eats seeds, washes its face and falls asleep.
+# The start screen. Its star is Messy, a pixel hamster: a little desk pet in
+# the blocky, flat style of the Claude Code mascot. 240x240 (every pixel
+# doubled), PICO-8 palette. Messy idles, looks around, walks, eats seeds,
+# washes its face and falls asleep.
 # Tap Messy (or Clawd) to make it happy, wake it up and see its name.
 #
 # Clawd, the Claude Code mascot, lives on the right. Now and then the two throw
@@ -25,34 +26,33 @@
 # snows, breath clouds when it's cold, umbrellas in the rain and sunglasses
 # when it's hot.
 #
-# Swipe left or right through the pages: scene, agents, pipelines, home and
-# settings. The code lives in messy/:
-#   gfx        screen, palette, drawing helpers
-#   sprites    Messy, Clawd and the pirate
-#   actors     their state machines and poses
-#   directors  ball game and pirate visit; duo: scenes for two
-#   scene      sky, clock, wheel, characters: the main page
-#   seasons    meadow, seasonal particles, holidays; particles: all of them
-#   pages      the other pages
-#   herdr      agent and pipeline status and the daily note from the PC
-#   reminder   the pirate walks by before an appointment
-#   critters   a bird and a snail passing through
-#   home       Home Assistant
-#   sound, leds, prefs
+# Swipe left or right through the pages: scene, today, agents, pipelines,
+# home and settings. This file is only the main loop, the rest lives in desk/:
+#   gfx, prefs, sound, leds   screen and palette, settings, buzzer, LEDs
+#   pages                     the pages next to the scene
+#   data/herdr                agents, pipelines and the daily note from the PC
+#   data/ha                   Home Assistant
+#   scene/scene               sky, clock, wheel, characters: the main page
+#   scene/sprites, actors     Messy, Clawd and the pirate, their state machines
+#   scene/directors, duo      ball game and pirate visit; scenes for two
+#   scene/seasons, particles  meadow, seasonal particles, holidays; all particles
+#   scene/reminder, critters  the pirate before an appointment; bird and snail
 
 import network
 import time
 
-from messy import critters, herdr, home, leds, pages, particles, reminder, scene, seasons, sound
-from messy.actors import DIRECTED, FREE, Clawd, Messy
-from messy.directors import Ball, Visit, visit_due
-from messy.duo import Duo
-from messy.gfx import WIDTH, presto, touch
-from messy.prefs import settings
-from messy.scene import WHEEL_CX
-from messy.sprites import BASE_Y, C_BASE_Y, CS, S
+from desk import leds, pages, sound
+from desk.data import ha, herdr
+from desk.gfx import WIDTH, presto, touch
+from desk.prefs import settings
+from desk.scene import critters, particles, reminder, scene, seasons
+from desk.scene.actors import DIRECTED, FREE, Clawd, Messy
+from desk.scene.directors import Ball, Visit, visit_due
+from desk.scene.duo import Duo
+from desk.scene.scene import WHEEL_CX
+from desk.scene.sprites import BASE_Y, C_BASE_Y, CS, S
 
-# WiFi only after Presto() (created in messy.gfx), which resets the radio.
+# WiFi only after Presto() (created in desk.gfx), which resets the radio.
 # The first try right after boot can fail, so keep_wifi() tries again.
 wlan = network.WLAN(network.STA_IF)
 try:
@@ -244,7 +244,7 @@ def pose(now, k):
         name_tag[0].pose.bubble = "name"
 
     # dress for the weather
-    wear, rain, breath = home.outfit()
+    wear, rain, breath = ha.outfit()
     if rain and messy.state in H_UMBRELLA:
         hp.umbrella = True
         hp.paws = ((13, 7),)
@@ -296,7 +296,7 @@ while True:
     if frame % 4 == 0:
         keep_wifi(now)
         scene.sync_clock(now)
-    home.poll(now)
+    ha.poll(now)
     follow_pipelines(now)
     follow_agents(now)
 

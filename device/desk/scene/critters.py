@@ -8,8 +8,8 @@ import math
 import random
 import time
 
-from messy.gfx import WIDTH, draw_colour_art, pen
-from messy.sprites import C_BASE_Y, CS, GROUND, S
+from desk.gfx import WIDTH, draw_colour_art, pen
+from desk.scene.sprites import C_BASE_Y, CS, GROUND, S
 
 BODY_PEN = pen((150, 105, 70))
 BELLY_PEN = pen((230, 210, 180))

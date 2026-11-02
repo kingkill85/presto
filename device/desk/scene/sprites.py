@@ -2,7 +2,7 @@
 # pirate, plus the umbrellas they hold in the rain. Where they stand on screen
 # lives here too.
 
-from messy.gfx import (COLOURS, CLAWD_PEN, EYE_PEN, HANDLE_PEN, HAT_PEN, LAPTOP_EDGE_PEN, LAPTOP_PEN, LEAF_DARK_PEN,
+from desk.gfx import (COLOURS, CLAWD_PEN, EYE_PEN, HANDLE_PEN, HAT_PEN, LAPTOP_EDGE_PEN, LAPTOP_PEN, LEAF_DARK_PEN,
                        LEAF_PEN, UMBRELLA_PEN, UMBRELLA_TIP_PEN, WIDTH, WOOL_PEN, blit, display, draw_art, pen,
                        runs_from_grid)
 

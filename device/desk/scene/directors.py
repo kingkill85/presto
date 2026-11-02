@@ -9,10 +9,10 @@ import math
 import random
 import time
 
-from messy import sound
-from messy.actors import RUN, WALK
-from messy.gfx import BALL_PEN, HEART_PEN, WIDTH, display, draw_bubble
-from messy.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_W, GB_Y, GROUND, HOME_X, S, draw_guybrush,
+from desk import sound
+from desk.gfx import BALL_PEN, HEART_PEN, WIDTH, display, draw_bubble
+from desk.scene.actors import RUN, WALK
+from desk.scene.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_W, GB_Y, GROUND, HOME_X, S, draw_guybrush,
                            walk_frame)
 
 

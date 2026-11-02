@@ -3,8 +3,8 @@
 
 import math
 
-from messy import herdr
-from messy.gfx import presto
+from desk.data import herdr
+from desk.gfx import presto
 
 COUNT = 7
 _base = [0.0, 0.0, 0.0]  # the shared mood colour, fading

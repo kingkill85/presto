@@ -7,9 +7,11 @@
 import random
 import time
 
-from messy import herdr, seasons, sound
-from messy.gfx import WIDTH, display, draw_bubble
-from messy.sprites import GB_W, GROUND, draw_guybrush, walk_frame
+from desk import sound
+from desk.data import herdr
+from desk.gfx import WIDTH, display, draw_bubble
+from desk.scene import seasons
+from desk.scene.sprites import GB_W, GROUND, draw_guybrush, walk_frame
 
 MARKS = (10, 2)  # minutes before
 SCALE = 3  # pirate pixel, 4 on his visits
