@@ -23,8 +23,8 @@ from desk.scene.actors import RUN, WALK
 from desk.scene.directors import arc, walk_to
 from desk.scene.particles import spawn
 from desk.scene.scene import MUG, PROP_PENS
-from desk.scene.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_W, GB_Y, GROUND, HOME_X, S,
-                                draw_guybrush, walk_frame)
+from desk.scene.sprites import (BASE_Y, C_BASE_Y, C_HOME_X, C_MAX_X, CS, GB, GB_ARMS, GB_HAND, GB_HAND_L, GB_W,
+                                GB_Y, GROUND, HOME_X, S, draw_guybrush, walk_frame)
 
 KINDS = (("buh", 2), ("treasure", 3), ("monkey", 3), ("fence", 3), ("spit", 3))  # (kind, weight)
 FIRST_MS = (10 * 60000, 20 * 60000)  # after a start
@@ -33,8 +33,8 @@ EVERY_MS = (30 * 60000, 60 * 60000)  # between visits: rare, so it stays special
 OFF_L = -GB_W * GB - 12  # off the screen on the left
 G_STOP = 4  # where he stands
 BACK_X = 76  # Messy steps back to here when he comes in
-HAND = 13 * GB  # his near hand, from his corner (facing right)
-HAND_Y = GB_Y + 22 * GB
+HAND = GB_HAND[0]  # his hand, from his corner (facing right)
+HAND_Y = GB_Y + GB_HAND[1]
 TALK = (1, 2, 1, 0, 2, 1, 0, 0)  # mouth while talking
 
 _next_visit = time.ticks_add(time.ticks_ms(), random.randint(*FIRST_MS))
@@ -413,7 +413,10 @@ class Visit:
         elif ph == "shirt":  # ... it's a T-shirt
             self.items.append((CHEST_OPEN, PIRATE_PENS, chest_x, GROUND - 24))
             self.g_pose(arms="up", mouth=1)
-            self.items.append((TSHIRT, PIRATE_PENS, self.gx + 14, GB_Y - 26))
+            if GB_ARMS:  # held up high
+                self.items.append((TSHIRT, PIRATE_PENS, self.gx + 14, GB_Y - 26))
+            else:  # held out in front of him
+                self.items.append((TSHIRT, PIRATE_PENS, self.gx + HAND - 8, HAND_Y - 24))
             if t < 2200:
                 self.bubbles.append(("NUR EIN\nT-SHIRT?!", self.gx + 76, GB_Y + 24))
             else:
@@ -432,7 +435,7 @@ class Visit:
         elif ph == "leave":  # off with the chest under his arm, still wearing it
             there = self.g_walk(OFF_L, 2.5)
             self.items.append((TSHIRT, PIRATE_PENS, self.gx + 14, GB_Y + 52))
-            self.items.append((CHEST, PIRATE_PENS, self.gx - 8, HAND_Y - 8))
+            self.items.append((CHEST, PIRATE_PENS, self.gx + GB_HAND_L - 20, HAND_Y - 8))
             self.farewell(hp, cp)
             if there:
                 self.go("home")
@@ -470,7 +473,7 @@ class Visit:
         elif ph == "run":  # and off he goes
             hp.look = cp.look = 1
             there = self.g_walk(OFF_L, 4.0, 1.5)
-            self.items.append((MUG, PROP_PENS, self.gx - 4, HAND_Y - 8))
+            self.items.append((MUG, PROP_PENS, self.gx + GB_HAND_L - 8, HAND_Y - 8))
             if there:
                 self.go("turn")
         elif ph == "turn":  # nothing there; and where is the coffee?

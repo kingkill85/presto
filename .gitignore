@@ -3,3 +3,4 @@ __pycache__/
 device/*.rtttl
 *.rtttl
 device/ha_config.py
+device/desk/scene/gb_sheet.py

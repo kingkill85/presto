@@ -219,29 +219,29 @@ GB = 4  # size of one pirate pixel
 GB_W = 16
 GB_Y = GROUND - 32 * GB
 GB_OFF = 3  # grid columns left of col 0 (arms and outline reach out to -2 / 17)
-GB_COLOURS = {  # Monkey Island 2 look: beard, marine coat, black trousers
-    "H": pen((255, 240, 170)),  # hair highlight
-    "y": pen((240, 200, 90)),   # hair
-    "Y": pen((190, 140, 50)),   # hair shade
-    "z": pen((170, 115, 50)),   # beard
+GB_COLOURS = {  # Monkey Island 2 look: auburn hair and beard, indigo coat with a red trim, big red boots
+    "H": pen((225, 165, 80)),   # hair highlight
+    "y": pen((190, 110, 45)),   # hair
+    "Y": pen((140, 75, 30)),    # hair shade
+    "z": pen((150, 85, 40)),    # beard
     "k": pen((235, 180, 140)),  # skin
     "K": pen((190, 130, 100)),  # skin shade
     "w": pen((240, 235, 220)),  # shirt, eye white
-    "L": pen((75, 100, 170)),   # coat light edge
-    "c": pen((40, 60, 120)),    # marine blue coat
-    "C": pen((25, 35, 80)),     # coat shade, far sleeve
+    "L": pen((150, 35, 50)),    # the coat's red trim
+    "c": pen((55, 45, 140)),    # indigo coat
+    "C": pen((35, 25, 95)),     # coat shade, far sleeve
     "g": pen((230, 180, 40)),   # gold buttons, buckle
     "b": pen((110, 60, 30)),    # belts
     "n": pen((30, 26, 36)),     # trousers, far leg
     "N": pen((62, 56, 74)),     # near leg
-    "d": pen((80, 45, 25)),     # boots
+    "d": pen((125, 25, 40)),    # boots, wine red
     "e": pen((20, 15, 20)),     # eye, mouth
     # selective outline: a darker shade of whatever it borders
-    "j": pen((125, 85, 30)),    # around hair and beard
+    "j": pen((95, 50, 20)),     # around hair and beard
     "q": pen((150, 95, 70)),    # around skin
-    "v": pen((14, 20, 52)),     # around the coat
+    "v": pen((20, 12, 55)),     # around the coat
     "O": pen((12, 8, 18)),      # around trousers
-    "D": pen((48, 26, 14)),     # around boots
+    "D": pen((60, 10, 18)),     # around boots
 }
 OUTLINE_OF = {"H": "j", "y": "j", "Y": "j", "z": "j", "k": "q", "K": "q", "w": "v", "L": "v", "c": "v",
               "C": "v", "g": "v", "b": "v", "n": "O", "N": "O", "d": "D", "e": "O"}
@@ -302,15 +302,15 @@ GB_FRONT = (
 )
 GB_FRONT_MOUTHS = ((), ((7, 10, "e"), (8, 10, "e")), ((7, 10, "e"), (8, 10, "e"), (7, 11, "e"), (8, 11, "e")))
 
-# Leg poses, 7 rows below the coat; n is the far leg, N the near one, d boots.
-# Walking lifts one foot after the other; the legs stay side by side and one
-# foot is always on the ground.
+# Leg poses, 7 rows below the coat; n is the far leg, N the near one, d the
+# big cuffed boots (up to below the knee). Walking lifts one foot after the
+# other; the legs stay side by side and one foot is always on the ground.
 GB_LEGS = {
-    "stand": (".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....",
+    "stand": (".....nn..NN.....", "....dddd.dddd...", ".....dd..dd.....", ".....dd..dd.....",
               ".....dd..dd.....", "....ddd..ddd....", "....dddd.dddd..."),
-    "far": (".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....", ".....dd..NN.....",
+    "far": (".....nn..NN.....", "....dddd.NN.....", ".....dd..dddd...", ".....dd..dd.....",
             "....ddd..dd.....", "....dddd.ddd....", ".........dddd..."),
-    "near": (".....nn..NN.....", ".....nn..NN.....", ".....nn..NN.....", ".....nn..dd.....",
+    "near": (".....nn..NN.....", ".....nn..dddd...", "....dddd..dd....", ".....dd..dd.....",
              ".....dd..ddd....", "....ddd..dddd...", "....dddd........"),
 }
 # Arm swing while walking: lower sleeves (rows 19-22) of the far arm (col 3)
@@ -338,6 +338,61 @@ GB_HEM = (22, 23, 24)  # coat rows that swing
 
 _gb_cache = {}
 
+# The original Monkey Island 2 look, made from a sprite sheet: only on this
+# Presto (gb_sheet.py is not in git). Without it he is drawn from the art above.
+try:
+    from desk.scene import gb_sheet
+    SHEET_PENS = {ch: pen(rgb) for ch, rgb in gb_sheet.COLOURS.items()}
+except ImportError:
+    gb_sheet = None
+# Where things are in the sheet's side view (facing right) and front view
+SHEET_LEG_ROWS = range(23, 32)
+SHEET_FAR, SHEET_NEAR = (2, 3, 4), (5, 6, 7, 8)  # leg columns
+SHEET_HEM = (20, 21, 22)
+SHEET_MOUTHS = ((), ((7, 5),), ((7, 5), (6, 6), (7, 6)))
+SHEET_FRONT_MOUTHS = ((), ((7, 6), (8, 6)), ((7, 6), (8, 6), (7, 7), (8, 7)))
+# Where his hand is, from his corner: facing right (x, y), facing left (x);
+# and whether he can throw his arms up (the sheet has no such frame)
+if gb_sheet:
+    GB_HAND, GB_HAND_L, GB_ARMS = (8 * GB, 19 * GB), 4 * GB, False
+else:
+    GB_HAND, GB_HAND_L, GB_ARMS = (13 * GB, 22 * GB), -GB, True
+
+
+def sheet_sprite(flip, legs, mouth, hem, front):
+    """The sheet's frame on our grid; walking lifts one boot after the other
+    (the sheet has no walk frames), the coat's hem swings."""
+    art = gb_sheet.FRONT if front else gb_sheet.SIDE
+    cols = GB_W + 2 * GB_OFF
+    left = (cols - len(art[0])) // 2
+    g = [["."] * cols for _ in range(32)]
+    for r, row in enumerate(art):
+        shift = hem if r in SHEET_HEM and not front else 0
+        for c, ch in enumerate(row):
+            if ch != "." and 0 <= left + c + shift < cols:
+                g[r][left + c + shift] = ch
+    if not front and legs != "stand":
+        # the lifted leg goes up a row and swings: the far one back, the near one forward
+        lift, dx = (SHEET_FAR, -1) if legs == "far" else (SHEET_NEAR, 1)
+        cells = {}
+        for r in SHEET_LEG_ROWS:
+            for c in SHEET_FAR + SHEET_NEAR:
+                ch = art[r][c] if c < len(art[r]) else "."
+                if ch != ".":
+                    cells[(c, r)] = ch
+                    g[r][left + c] = "."
+        for part in (SHEET_FAR, SHEET_NEAR):  # far leg first, the near one in front of it
+            up, side = (1, dx) if part is lift else (0, 0)
+            for (c, r), ch in cells.items():
+                if c in part and 0 <= left + c + side < cols:
+                    g[r - up][left + c + side] = ch
+    for c, r in (SHEET_FRONT_MOUTHS if front else SHEET_MOUTHS)[mouth]:
+        g[r][left + c] = "t"
+    if flip:
+        for row in g:
+            row.reverse()
+    return runs_from_grid(g, SHEET_PENS, GB_OFF)
+
 
 def guybrush_sprite(flip, legs, arms, mouth, hem=0, hair=0, front=False):
     """mouth: 0 closed, 1 open, 2 wide; hem: the coat's lower edge shifted
@@ -348,6 +403,9 @@ def guybrush_sprite(flip, legs, arms, mouth, hem=0, hair=0, front=False):
     key = (flip, legs, arms, mouth, hem, hair, front)
     runs = _gb_cache.get(key)
     if runs is not None:
+        return runs
+    if gb_sheet:
+        runs = _gb_cache[key] = sheet_sprite(flip, legs, mouth, hem, front)
         return runs
     cols = GB_W + 2 * GB_OFF
     g = [["."] * cols for _ in range(32)]

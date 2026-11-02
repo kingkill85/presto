@@ -41,6 +41,10 @@ A restart loses the agent status until the next poller round (≤30 s).
     `ha_config.example.py`.
   - Pinned pipelines live in the plugin's config dir (`pipelines.json`).
   - `*.rtttl` melodies (e.g. `guybrush.rtttl`) stay on the device only.
+  - `device/desk/scene/gb_sheet.py` (Guybrush in the original look, made
+    from a sprite sheet) is gitignored and stays on the device; without it
+    `sprites.py` draws our own fan art. Props use `GB_HAND`, the sheet has no
+    arms-up frame (`GB_ARMS`) and no walk frames (the boots are lifted in code).
 - Root: only apps, config and `sdcard.py`. Shared helpers go to `lib/` (on
   `sys.path`, so `import tz` works). Exception: `sdcard.py` stays in the root,
   since `.frozen` (with the broken built-in `sdcard`) comes before `/lib`.
