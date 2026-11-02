@@ -12,9 +12,10 @@ pipeline), GitHub via `gh api` (newest Actions run). Pinned refs from the config
 example a team's develop branch) are added. Running pipelines come first,
 then failed ones, then the most recent.
 
-It broadcasts one small JSON UDP packet (same port as the agent status):
+It broadcasts one small JSON UDP packet (same port as the agent status), with
+the computer's name, so the Presto can show several computers together:
 
-  {"type": "pipelines", "status": "running|failed|success|none",
+  {"type": "pipelines", "src": "myhost", "status": "running|failed|success|none",
    "items": [{"w": "myspace", "n": "!42", "t": "title", "s": "running",
               "p": "3/5", "d": "4m", "a": "12m", "f": "test_backend"}, ...]}
 
@@ -25,7 +26,10 @@ by itself when the Herdr server is gone. glab/gh must be logged in.
   python3 pipelines.py --once          # send once and print the payload
   python3 pipelines.py --target 192.168.1.50
 
-It also sends today's daily note (daynote.py): appointments and tasks.
+It also sends the Herdr agent status (notify.py sends it on every change) and
+today's daily note (daynote.py): appointments and tasks. Between the rounds
+everything goes out again every few seconds, so a Presto that just started
+shows it at once.
 """
 
 import argparse
@@ -39,6 +43,8 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 PORT = 47474
+SOURCE = socket.gethostname()[:16]  # the Presto keeps the status of each computer apart
+AGENT_EVERY = 5  # s between status messages (new pipeline data: every --interval)
 MAX_ITEMS = 5  # rows on the Presto's screen
 RECENT_S = 7 * 86400  # my MRs/PRs older than this are left out
 RUNNING = ("running", "pending", "created", "preparing", "waiting_for_resource", "scheduled")
@@ -313,7 +319,7 @@ def collect(pinned):
         overall = "success"
     else:
         overall = "none"
-    return {"type": "pipelines", "status": overall, "items": items}
+    return {"type": "pipelines", "src": SOURCE, "status": overall, "items": items}
 
 
 def herdr_alive():
@@ -338,11 +344,21 @@ def agent_payload():
 
 
 def day_payload(setting):
-    """Today's daily note, pulled from git first now and then."""
+    """Today's daily note, pulled from git first now and then; None when this
+    computer has no vault (another one may have it)."""
     import daynote  # same directory
     folder = daynote.find_folder(setting or None)
+    if not folder:
+        return None
     daynote.pull(folder)
-    return json.dumps(daynote.collect(folder), separators=(",", ":")).encode()
+    return json.dumps(dict(daynote.collect(folder), src=SOURCE), separators=(",", ":")).encode()
+
+
+def send_agents(sock, target):
+    try:
+        sock.sendto(agent_payload(), (target, PORT))
+    except Exception as e:  # Herdr busy, ...
+        print(f"agent status: {e}", flush=True)
 
 
 def main():
@@ -360,15 +376,16 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     misses = 0
+    latest = []  # the last pipeline and daily note messages, sent again between the rounds
     while True:
         if not args.once:
             misses = 0 if herdr_alive() else misses + 1
             if misses >= 3:
                 # tell the Presto that nothing is going on any more, so Clawd
                 # and Messy don't keep working after Herdr was closed
-                for msg in ({"status": "none", "agents": 0, "count": 0, "title": "", "list": []},
-                            {"type": "pipelines", "status": "none", "items": []},
-                            {"type": "day", "date": None, "note": 0, "events": [], "tasks": []}):
+                for msg in ({"src": SOURCE, "status": "none", "agents": 0, "count": 0, "title": "", "list": []},
+                            {"type": "pipelines", "src": SOURCE, "status": "none", "items": []},
+                            {"type": "day", "src": SOURCE, "date": None, "note": 0, "events": [], "tasks": []}):
                     for _ in range(3):
                         sock.sendto(json.dumps(msg).encode(), (args.target, PORT))
                         time.sleep(0.05)
@@ -376,19 +393,19 @@ def main():
                 break
         try:
             payload = json.dumps(collect(pinned), separators=(",", ":")).encode()
+            latest = [payload]
             for _ in range(2):  # UDP may drop a packet now and then
                 sock.sendto(payload, (args.target, PORT))
                 time.sleep(0.05)
-            try:
-                sock.sendto(agent_payload(), (args.target, PORT))
-            except Exception as e:
-                print(f"agent status: {e}", flush=True)
+            send_agents(sock, args.target)
             if args.daynotes != "off":
                 try:
                     day = day_payload(args.daynotes)
-                    sock.sendto(day, (args.target, PORT))
-                    if args.once:
-                        print(day.decode())
+                    if day:
+                        latest.append(day)
+                        sock.sendto(day, (args.target, PORT))
+                        if args.once:
+                            print(day.decode())
                 except Exception as e:
                     print(f"daily note: {e}", flush=True)
             if args.once:
@@ -400,7 +417,19 @@ def main():
             print(f"error: {e}", flush=True)
         if args.once:
             break
-        time.sleep(args.interval)
+        # between the rounds the agent status and the last pipelines and daily
+        # note go out again every few seconds, so a Presto that just started
+        # knows them quickly
+        until = time.time() + args.interval
+        while time.time() < until:
+            time.sleep(max(0.0, min(AGENT_EVERY, until - time.time())))
+            send_agents(sock, args.target)
+            for msg in latest + latest[:1]:  # the pipelines twice: big packets get lost more often
+                try:
+                    sock.sendto(msg, (args.target, PORT))
+                    time.sleep(0.2)  # the Presto's radio only buffers a few packets
+                except OSError as e:
+                    print(f"resend: {e}", flush=True)
 
 
 if __name__ == "__main__":

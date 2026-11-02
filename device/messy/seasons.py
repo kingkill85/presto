@@ -79,6 +79,15 @@ def fireworks(t):
     return bool(t) and ((t[1] == 12 and t[2] == 31 and t[3] >= 18) or (t[1] == 1 and t[2] == 1 and t[3] < 2))
 
 
+NIGHT_FROM, NIGHT_TO = 22, 6  # hours Messy and Clawd sleep (unless there's work)
+
+
+def bedtime(now):
+    """Between 22:00 and 6:00 (once the clock is set)."""
+    t = today(now)
+    return bool(t) and (t[3] >= NIGHT_FROM or t[3] < NIGHT_TO)
+
+
 def is_night(t):
     if home.weather_state():
         return home.weather()[1]

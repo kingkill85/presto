@@ -29,15 +29,16 @@ _next_bird = time.ticks_add(time.ticks_ms(), random.randint(60000, 150000))
 _next_snail = time.ticks_add(time.ticks_ms(), random.randint(180000, 480000))
 
 
-def update(now, k, messy, clawd, cp):
-    _update_bird(now, k, clawd, cp)
+def update(now, k, messy, clawd, cp, night):
+    """night: birds sleep too."""
+    _update_bird(now, k, clawd, cp, night)
     _update_snail(now, k, messy)
 
 
-def _update_bird(now, k, clawd, cp):
+def _update_bird(now, k, clawd, cp, night):
     global bird, _next_bird
     if bird is None:
-        if time.ticks_diff(now, _next_bird) > 0:
+        if time.ticks_diff(now, _next_bird) > 0 and not night:
             _next_bird = time.ticks_add(now, random.randint(120000, 300000))
             right = random.random() < 0.5
             bird = {"phase": "fly", "x": WIDTH + 6 if right else -12, "y": random.randint(40, 90),

@@ -71,6 +71,9 @@ A restart loses the agent status until the next poller round (≤30 s).
   sets the LEDs. External status overrides states: Herdr agents → Clawd
   (`work`, `alert`, `done`), pipelines → Messy (`wheel`, `broken`), but never
   during a director (an agent asking a question ends `Ball` and `Duo`).
+- From 22:00 to 6:00 (`seasons.bedtime`) both just sleep: no games, scenes,
+  pirate or bird. Herdr work still wakes them (Clawd for agents, Messy for
+  pipelines); afterwards they go back to sleep.
 - While a status wants an actor (wheel, laptop), its state never times out into
   a random pick, so no game or scene can start over it (`next_state`).
 - After a failed pipeline Messy sits in the broken wheel (and the LEDs pulse
@@ -115,6 +118,14 @@ Performance on the Presto (measured, keep in mind when adding things):
   polls the CI of the active Herdr spaces (GitLab via `glab api`, GitHub via
   `gh api`) every 30 s and sends it on the same port with
   `"type": "pipelines"`, plus the agent status again.
+- Every message carries the computer's name (`"src"`); the Presto keeps each
+  computer's agents, pipelines and daily note apart and shows them merged
+  (`herdr._merge`), so Herdr can run on several computers at once. Closing
+  Herdr on one only removes its part.
+- Between the 30 s rounds the poller sends the agent status and the last
+  pipelines and daily note again every 5 s (spaced out: the Presto's radio
+  only buffers a few packets, it reads them every frame). Broadcasts get lost
+  now and then, the repeats make up for it.
 - `daynote.py` (called by the poller) reads today's note `YYYY-MM-DD.md` from
   the Obsidian vault (found via Obsidian's `obsidian.json`, so it works on every
   computer; setting `daynotes` in `pipelines.json` overrides it), `git pull

@@ -35,6 +35,7 @@ STAR_PEN = pen((200, 200, 230))
 CLOCK_PEN = pen((55, 75, 135))  # changed with the sky
 DATE_PEN = pen((95, 110, 165))
 sky_pen = None  # None until the sun's elevation is known
+sky_colour = (29, 43, 83)  # its rgb, BACKGROUND until then
 _sky_checked = -100000
 
 SUN_ART = ("#..#..#", ".#####.", ".#####.", "#######", ".#####.", ".#####.", "#..#..#")
@@ -52,15 +53,17 @@ def sky_rgb(elevation):
     return SKY_STOPS[-1][1]
 
 
-def _update_sky_colours(now):
-    global sky_pen, _sky_checked, CLOCK_PEN, DATE_PEN
+def update_sky_colours(now):
+    """The sky colour (and the clock's) from the sun, every few seconds; the
+    other pages take their colours from it too."""
+    global sky_pen, sky_colour, _sky_checked, CLOCK_PEN, DATE_PEN
     if time.ticks_diff(now, _sky_checked) < 5000:
         return
     _sky_checked = now
     sun = home.sun_state()
     if not sun or sun["attributes"].get("elevation") is None:
         return
-    r, g, b = sky_rgb(sun["attributes"]["elevation"])
+    r, g, b = sky_colour = sky_rgb(sun["attributes"]["elevation"])
     sky_pen = pen((r, g, b))
     CLOCK_PEN = pen((min(255, r + 42), min(255, g + 52), min(255, b + 70)))
     DATE_PEN = pen((min(255, r + 80), min(255, g + 84), min(255, b + 90)))
@@ -70,7 +73,7 @@ def sky_background(now):
     cond, _ = home.weather()
     if cond in home.THUNDER and now % 9000 < 110:
         return FLASH_PEN
-    _update_sky_colours(now)
+    update_sky_colours(now)
     return sky_pen or BACKGROUND
 
 
@@ -120,30 +123,22 @@ def draw_weather_icon(cond, night, x, y, s):
         draw_art(BOLT_ART, x + 4 * s, y + 7 * s, s, ALERT_PEN)
 
 
-def weather_texts():
-    """(temperature, condition) for the top right corner; None if unknown."""
-    if not home.weather_state():
-        return None, None
-    t = home.temperature()
-    cond = home.weather()[0]
-    return ("%d" % round(t) if t is not None else None), home.CONDITION_DE.get(cond, (cond or "").upper())
+def temperature_text():
+    t = home.temperature() if home.weather_state() else None
+    return "%d" % round(t) if t is not None else None
 
 
 def corner_width():
-    """How much of the top right corner the weather takes."""
-    temp, desc = weather_texts()
-    w = display.measure_text(temp, 2) + 6 if temp else 0  # with the degree sign
-    return max(w, display.measure_text(desc, 1) if desc else 0)
+    """How much of the top right corner the temperature takes."""
+    temp = temperature_text()
+    return display.measure_text(temp, 2) + 6 if temp else 0  # with the degree sign
 
 
 def draw_corner_weather():
-    """Temperature and condition top right, opposite the weather symbol."""
-    temp, desc = weather_texts()
+    """The temperature top right, opposite the weather symbol."""
+    temp = temperature_text()
     if temp:
-        draw_degrees(temp, WIDTH - 6 - display.measure_text(temp, 2) - 6, 4, 2, DATE_PEN)
-    if desc:
-        display.set_pen(DATE_PEN)
-        display.text(desc, WIDTH - 6 - display.measure_text(desc, 1), 23, -1, 1)
+        draw_degrees(temp, WIDTH - 6 - corner_width(), 12, 2, DATE_PEN)  # level with the date
 
 
 def draw_next_event(now):
@@ -203,10 +198,9 @@ def draw_clock(now):
     x, y = (WIDTH - width) // 2, 34
     for ch in text:
         if ch == ":":
-            if (now // 1000) % 2 == 0:
-                display.set_pen(CLOCK_PEN)
-                display.rectangle(x, y + b, b, b)
-                display.rectangle(x, y + 3 * b, b, b)
+            display.set_pen(CLOCK_PEN)
+            display.rectangle(x, y + b, b, b)
+            display.rectangle(x, y + 3 * b, b, b)
             x += 2 * b
             continue
         draw_art(DIGITS[ch], x, y, b, CLOCK_PEN)

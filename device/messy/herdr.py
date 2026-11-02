@@ -19,12 +19,10 @@ WAITING_STATES = ("running", "pending", "created", "preparing", "waiting_for_res
 
 agent_status = None  # combined: working, blocked, done, idle
 agent_list = []  # [{"w": workspace, "k": kind, "s": status, "t": title}, ...]
-agent_rx = 0
 pipe_status = None  # combined: running, failed, success
 pipe_items = []  # [{"w": space, "n": MR or branch, "s": status, ...}, ...]
 pipe_rx = 0
-day = None  # today's daily note: {"date", "note": 0/1, "events": [{"t", "n", "x"}], "tasks": [{"n", "x"}]}
-day_rx = 0
+day = None  # today's daily note: {"date", "note": 0/1, "place", "events": [{"t", "n", "x"}], "tasks": [{"n", "x"}]}
 
 # Beeps come from changes of single agents and pipelines, not from the combined
 # status, so one finishing while another keeps running is heard too. The main
@@ -98,9 +96,70 @@ def _track_pipes(items):
             del recent_pipes[0]
 
 
+# Several computers can run Herdr at the same time: every message names its
+# computer ("src"), each one's status is kept apart and they are shown merged.
+AGENT_ORDER = ("blocked", "working", "done", "idle", "unknown")  # the combined status: the first one found
+_agents = {}  # src -> [status, list, received]
+_pipes = {}  # src -> [status, items, received]
+_days = {}  # src -> [message, received]
+
+
+def _urgency(item):
+    s = item.get("s")
+    return 0 if s in WAITING_STATES else 1 if s == "failed" else 2
+
+
+def _merge():
+    """The combined status of all computers."""
+    global agent_status, agent_list, pipe_status, pipe_items, pipe_rx, day
+    agents, states = [], []
+    for src in sorted(_agents):
+        status, items, _ = _agents[src]
+        agents += items
+        states.append(status)
+    agent_status = next((s for s in AGENT_ORDER if s in states), None)
+    _watch_agents(agents)
+    agent_list = agents
+    items, states, pipe_rx = [], [], 0
+    for src in sorted(_pipes):
+        status, its, rx = _pipes[src]
+        items += its
+        states.append(status)
+        pipe_rx = rx
+    items.sort(key=_urgency)  # running ones first, then failed (sort is stable)
+    pipe_status = "running" if "running" in states else "failed" if "failed" in states else \
+        "success" if states else None
+    _watch_pipes(items)
+    pipe_items = items
+    if not _pipes:
+        recent_pipes.clear()
+    notes = sorted(_days.values(), key=lambda v: (bool(v[0].get("note")), v[1]))  # one with a note wins
+    day = notes[-1][0] if notes else None
+
+
+def _receive(msg, now):
+    src = msg.get("src", "")
+    kind = msg.get("type")
+    if kind == "day":
+        if msg.get("date"):
+            _days[src] = [msg, now]
+        else:  # no date: Herdr closed there
+            _days.pop(src, None)
+    elif kind == "pipelines":
+        if msg["status"] == "none":  # no pipelines there, or Herdr closed
+            _pipes.pop(src, None)
+        else:
+            _pipes[src] = [msg["status"], msg.get("items", []), now]
+    elif msg["status"] == "none":
+        _agents.pop(src, None)
+    else:
+        _agents[src] = [msg["status"], msg.get("list", []), now]
+
+
 def poll(now):
-    """Read every waiting packet without blocking."""
-    global agent_status, agent_list, agent_rx, pipe_status, pipe_items, pipe_rx, day, day_rx, _sock
+    """Read every waiting packet without blocking; forget computers that went
+    quiet."""
+    global _sock
     if _sock is None:
         if not _wlan.isconnected():
             return
@@ -111,41 +170,23 @@ def poll(now):
         except OSError:
             _sock = None
             return
+    changed = False
     while True:
         try:
             data = _sock.recv(4096)  # pipeline lists are ~1 KB, a smaller buffer drops them
         except OSError:
             break
         try:
-            msg = json.loads(data)
-            if msg.get("type") == "day":
-                day = msg if msg.get("date") else None  # no date: Herdr closed
-                day_rx = now
-                continue
-            if msg.get("type") == "pipelines":
-                pipe_status = msg["status"] if msg["status"] != "none" else None
-                if pipe_status is None:  # Herdr closed
-                    recent_pipes.clear()
-                pipe_items = msg.get("items", [])
-                _watch_pipes(pipe_items)
-                pipe_rx = now
-                continue
-            agent_status = msg["status"]
-            new_list = msg.get("list", [])
-            _watch_agents(new_list)
-            agent_list = new_list
-            agent_rx = now
+            _receive(json.loads(data), now)
+            changed = True
         except (ValueError, KeyError, TypeError):
             pass
-    if agent_status and time.ticks_diff(now, agent_rx) > AGENT_STALE_MS:
-        agent_status = None
-        agent_list = []
-    if day and time.ticks_diff(now, day_rx) > PIPE_STALE_MS:
-        day = None
-    if pipe_status and time.ticks_diff(now, pipe_rx) > PIPE_STALE_MS:
-        pipe_status = None
-        pipe_items = []
-        recent_pipes.clear()
+    for table, stale_ms in ((_agents, AGENT_STALE_MS), (_pipes, PIPE_STALE_MS), (_days, PIPE_STALE_MS)):
+        for src in [src for src, v in table.items() if time.ticks_diff(now, v[-1]) > stale_ms]:
+            del table[src]
+            changed = True
+    if changed:
+        _merge()
 
 
 def next_event(t):

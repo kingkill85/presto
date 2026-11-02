@@ -2,14 +2,15 @@
 """Today's daily note (Obsidian or any folder of YYYY-MM-DD.md files) for the
 Presto: the appointments and tasks, as one small JSON message
 
-  {"type": "day", "date": "2026-10-16", "note": 1,
+  {"type": "day", "date": "2026-10-16", "note": 1, "place": "home",
    "events": [{"t": "09:00", "n": "Daily Standup", "x": 1}, ...],
    "tasks": [{"n": "Retro-Vorbereitung", "x": 0}, ...]}
 
 Appointments are the list items under "## Termine" with a time like (13:00),
 tasks the list items under "## Aufgaben"; "x" is 1 when the box is ticked.
 Wikilinks show their alias, bold and links are stripped. There is only a note
-on work days: "note" is 0 on weekends and holidays.
+on work days: "note" is 0 on weekends and holidays. "place" is "home" or
+"office" when a line like "> Homeoffice-Tag." or "> Büro-Tag ..." says so.
 
 The folder differs from computer to computer, so it is looked up in the
 vaults Obsidian knows (obsidian.json): the folder of the Daily notes plugin,
@@ -151,18 +152,37 @@ def pull(folder):
         pass
 
 
+PLACE_LINE = re.compile(r"^\s*(>|\*\*|-\s*(?!\[))")  # quotes, bold labels, plain bullets (no tasks)
+HOME = re.compile(r"home\s*-?\s*office", re.I)
+OFFICE = re.compile(r"b(ü|ue)ro", re.I)
+
+
+def place(lines):
+    """"home", "office" or None from the first line that says where."""
+    for line in lines:
+        if not PLACE_LINE.match(line):
+            continue
+        if HOME.search(line):
+            return "home"
+        if OFFICE.search(line):
+            return "office"
+    return None
+
+
 def collect(folder, day=None):
     """The message for the note of `day` (default today) in `folder`."""
     day = day or time.strftime("%Y-%m-%d")
-    msg = {"type": "day", "date": day, "note": 0, "events": [], "tasks": []}
+    msg = {"type": "day", "date": day, "note": 0, "place": None, "events": [], "tasks": []}
     if not folder:
         return msg
     try:
         with open(os.path.join(folder, day + ".md"), encoding="utf-8") as f:
-            parts = sections(f.read().splitlines())
+            lines = f.read().splitlines()
     except OSError:
         return msg  # no note: not a work day (or not written yet)
+    parts = sections(lines)
     msg["note"] = 1
+    msg["place"] = place(parts.get(EVENTS, []) + lines)  # usually said under the appointments
     for done, text in items(parts.get(EVENTS, [])):
         m = TIME.search(text)
         if not m:

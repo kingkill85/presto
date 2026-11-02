@@ -139,10 +139,14 @@ def handle_touch(now):
 
 def next_state(actor, other, now):
     """The actor's state ran out: pick the next one, maybe with a director.
-    Not while a status wants it (wheel, laptop): no game may start then."""
+    Not while a status wants it (wheel, laptop): no game may start then. At
+    night they just sleep."""
     global director
     if (messy_wanted(now) if actor is messy else clawd_wanted()):
         actor.start("idle")  # follow_pipelines / follow_agents take over right after
+        return
+    if seasons.bedtime(now):
+        actor.start("sleep")
         return
     name = actor.pick(other.state)
     if name == "ball":
@@ -281,23 +285,23 @@ while True:
 
     handle_touch(now)
     if (not director and messy.state not in ("wheel", "broken") and clawd.state not in ("work", "alert")
-            and visit_due(now)):  # only when neither is busy working
+            and visit_due(now) and not seasons.bedtime(now)):  # only when neither is busy working
         director = Visit(messy, clawd, now)
     if messy.timed_out(now):
         next_state(messy, clawd, now)
     if clawd.timed_out(now):
         next_state(clawd, messy, now)
 
+    herdr.poll(now)  # every frame: the radio only buffers a few packets
     if frame % 4 == 0:
         keep_wifi(now)
-        herdr.poll(now)
         scene.sync_clock(now)
     home.poll(now)
     follow_pipelines(now)
     follow_agents(now)
 
     wear = pose(now, k)
-    critters.update(now, k, messy, clawd, cp)
+    critters.update(now, k, messy, clawd, cp, seasons.bedtime(now))
     reminder.update(now, k, isinstance(director, Visit))  # not while he's really here
     particles.update(k)
 

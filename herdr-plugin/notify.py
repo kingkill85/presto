@@ -18,6 +18,7 @@ import time
 
 PORT = 47474
 PRIORITY = ("blocked", "working", "done", "idle", "unknown")
+SOURCE = socket.gethostname()[:16]  # the Presto keeps the status of each computer apart
 MAX_LISTED = 5  # what fits on the Presto's screen
 UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
 
@@ -56,13 +57,14 @@ def agent_status():
         if status in by_status:
             first = by_status[status][0]
             return {
+                "src": SOURCE,
                 "status": status,
                 "agents": len(agents),
                 "count": len(by_status[status]),
                 "title": ascii_text(first.get("terminal_title_stripped") or "", 34),
                 "list": listed,
             }
-    return {"status": "none", "agents": 0, "count": 0, "title": "", "list": []}
+    return {"src": SOURCE, "status": "none", "agents": 0, "count": 0, "title": "", "list": []}
 
 
 def target():
