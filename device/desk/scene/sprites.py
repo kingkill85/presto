@@ -338,8 +338,8 @@ GB_HEM = (22, 23, 24)  # coat rows that swing
 
 _gb_cache = {}
 
-# The original Monkey Island 2 look, made from a sprite sheet: only on this
-# Presto (gb_sheet.py is not in git). Without it he is drawn from the art above.
+# The original Monkey Island 2 look, made from a sprite sheet (gb_sheet.py).
+# Without it he is drawn from the art above.
 try:
     from desk.scene import gb_sheet
     SHEET_PENS = {ch: pen(rgb) for ch, rgb in gb_sheet.COLOURS.items()}
