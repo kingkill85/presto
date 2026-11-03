@@ -17,7 +17,8 @@ from desk.scene.directors import arc, walk_to
 from desk.scene.particles import spawn
 from desk.scene.sprites import BASE_Y, C_BASE_Y, C_HOME_X, CS, GROUND, HOME_X, S
 
-KINDS = (("fight", 3), ("chase", 3), ("dance", 2), ("snack", 2), ("leap", 2), ("hide", 2), ("season", 3))
+KINDS = (("fight", 3), ("chase", 3), ("dance", 2), ("snack", 2), ("leap", 2), ("hide", 2), ("season", 3),
+         ("plane", 2), ("magic", 2), ("mirror", 2))
 # (kind, weight)
 MEET_X, C_MEET_X = 74, 128  # standing nose to nose
 
@@ -418,6 +419,114 @@ class Duo:
             if t > 3500:
                 self.go("home")
 
+    def plane(self, ph, t, hp, cp):
+        """Clawd folds a plane; it loops back and lands on Messy's head."""
+        m, c = self.m, self.c
+        if ph == "start":
+            self.meet("fold", hp, cp)
+        elif ph == "fold":
+            cp.eyes = "down"
+            cp.arms = (3 + (t // 220) % 2, 4)
+            self.fx.append(("plane", c.x - 16, C_BASE_Y + 16))
+            hp.sniff = (t // 150) % 2 == 0
+            if t > 1600:
+                self.go("fly")
+        elif ph == "fly":
+            u = min(1.0, t / 3200)
+            # One broad loop; its endpoint is exactly the landing position.
+            x = (c.x - 16) * (1 - u) + (m.x + 16) * u - 56 * math.sin(2 * math.pi * u)
+            y = (C_BASE_Y + 16) * (1 - u) + (BASE_Y - 12) * u - arc(u, 72)
+            self.fx.append(("plane", x, y))
+            hp.look = 1 if x > m.x + 8 * S else -1
+            cp.look = 1 if x > c.x + 8 * CS else -1
+            hp.eyes = cp.eyes = "wide"
+            cp.arms = (True, False) if t < 500 else (False, False)
+            if t > 3200:
+                self.go("land")
+        elif ph == "land":
+            self.fx.append(("plane", m.x + 16, BASE_Y - 12))
+            hp.look, hp.eyes = 0, "wide"
+            hp.bob = 1 if t < 200 else 0
+            cp.eyes = "happy"
+            cp.arms = (3 + (t // 180) % 2, 3 + (t // 180) % 2)
+            if t > 900:
+                hp.eyes, hp.blush = "happy", True
+            if t > 2200:
+                self.go("home")
+
+    def magic(self, ph, t, hp, cp):
+        """A tiny magician's hat produces a suspiciously large seed."""
+        m, c = self.m, self.c
+        if ph == "start":
+            self.meet("spell", hp, cp)
+            return
+        sx = 116
+        if ph in ("spell", "reveal"):
+            self.fx.append(("hat", sx, GROUND - 24))
+        if ph == "spell":
+            cp.arms = ((t // 260) % 2 == 0, False)
+            hp.sniff = (t // 180) % 2 == 0
+            if t > 900:
+                cp.bubble = "ZAUBER!"
+            if self.every(280):
+                spawn("spark", sx + random.choice((-12, 0, 12)), GROUND - 32, 0, -1, 12)
+            if t > 2100:
+                self.go("reveal")
+        elif ph == "reveal":
+            u = min(1.0, t / 900)
+            self.fx.append(("bigseed", sx - 8, GROUND - 24 - int(u * 48) // 4 * 4))
+            hp.eyes = cp.eyes = "wide"
+            cp.arms = (True, True)
+            if t > 1500:
+                self.go("snatch")
+        elif ph == "snatch":
+            hp.seed, hp.paws = True, ((6, 10), (9, 10))
+            hp.eyes, hp.blush = "happy", True
+            hp.mouth = 1 + (t // 160) % 2
+            m.puff = max(m.puff, 2.0)
+            hp.puff = 2
+            cp.eyes = "wide" if t < 900 else "happy"
+            if t > 900:
+                cp.bubble = "TA-DA!"
+            if self.every(500):
+                spawn("heart", m.x + 8 * S, BASE_Y - 8, 0, -1, 20)
+            if t > 2400:
+                self.go("home")
+
+    def mirror(self, ph, t, hp, cp):
+        """Messy copies Clawd a beat late, then sneezes: Clawd copies that too."""
+        if ph == "start":
+            self.meet("copy", hp, cp)
+        elif ph == "copy":
+            lead = (t // 700) % 4
+            echo = (max(0, t - 250) // 700) % 4
+            cp.arms = ((True, False), (False, True), (True, True), (False, False))[lead]
+            hp.paws = (((3, 5),), ((12, 5),), ((3, 5), (12, 5)), ())[echo]
+            cp.jump = 12 if lead == 2 else 0
+            hp.jump = 12 if echo == 2 else 0
+            hp.eyes = cp.eyes = "happy"
+            if t > 5600:
+                self.go("sneeze")
+        elif ph == "sneeze":
+            hp.eyes, hp.sniff = "closed", t < 700
+            hp.bob = 1 if 700 <= t < 1100 else 0
+            cp.eyes = "wide"
+            if 700 <= t < 1300:
+                hp.bubble = "HATSCHI!"
+            if t > 1400:
+                cp.eyes, cp.bob = "closed", 1
+                cp.bubble = "HATSCHI!"
+            if t > 2300:
+                self.go("laugh")
+        elif ph == "laugh":
+            hp.eyes = cp.eyes = "happy"
+            hp.jump = arc((t % 700) / 700, 12)
+            cp.jump = arc(((t + 200) % 700) / 700, 12)
+            if self.every(450):
+                spawn("heart", self.m.x + 12 * S, BASE_Y - 8, 0.3, -1, 20)
+            if t > 1800:
+                self.go("home")
+
     def season(self, ph, t, hp, cp):
         """Something for the season: a snowman, kicking leaves, watering a
         flower, ice cream."""
@@ -508,10 +617,20 @@ class Duo:
                 draw_flower(fx, fy)
             elif kind == "alert":
                 draw_alert_sign(int(fx), int(fy))
+            elif kind == "plane":
+                draw_colour_art(PLANE, TRICK_PENS, fx, fy)
+            elif kind == "hat":
+                draw_colour_art(MAGIC_HAT, TRICK_PENS, fx - 16, fy)
+            elif kind == "bigseed":
+                draw_art(SEED_ART, int(fx) // 4 * 4, int(fy) // 4 * 4, 8, SEED_PEN)
 
 
 # 4 px pixel art: a snowman built ball by ball (w snow, u shade, e coal, o
 # carrot) and a flower growing (g stem, l leaf, y bud, p petals)
+PLANE = ("wwwwwww", ".wuuuw.", "..wuw..", "..ww...", "..w....")
+MAGIC_HAT = (".eeeee.", ".eeeee.", ".eeeee.", ".ppppp.", "eeeeeee")
+TRICK_PENS = {"w": pen((255, 241, 232)), "u": pen((194, 195, 199)),
+              "e": EYE_PEN, "p": pen((126, 37, 83))}
 _BALL = ("..www..", ".wwwwu.", "wwwwwwu", "wwwwwwu", ".wwwuu.")
 _MIDDLE = ("..www..", ".wwwwu.", ".wwwwu.", "..wuu..")
 SNOWMAN = (("..ww...", ".wwwu..", "..uu..."), _BALL, _MIDDLE + _BALL,

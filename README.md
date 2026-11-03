@@ -14,6 +14,7 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 | --- | --- |
 | `main.py` | Boots into the start screen (`desk.main`), or once into the app picked on its apps page. |
 | `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
+| `gb.py` | Shared Retro console: GB, GBC, Game Gear, NES and Master System; loads only the selected ROM's native core. |
 | `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
 | `immich_frame.py` | Photo frame showing random photos from Immich, cached on the SD card. |
@@ -34,10 +35,14 @@ A 240×240 pixel scene in the PICO-8 palette, running at about 30 fps.
   cloud that ends in a hug, a chase around the world, a dance party, sharing a
   snack, leapfrog, hide and seek, and one for the season (a snowman, kicking
   leaves, watering a flower, ice cream).
+- **Little mischief:** Clawd folds a paper plane that loops back onto Messy's
+  head, conjures an oversized seed from a magician's hat, and plays a mirror
+  game with Messy that ends in two very theatrical sneezes.
 - **Visitors:** a bird that sometimes lands on Clawd's head, and now and then
   a snail crawling across the meadow.
 - **Guybrush** (Monkey Island 2 style fan art) comes by now and then (every 30 to 60
-  minutes, so it stays special) while neither of them is working. He introduces himself as a mighty
+  minutes, so it stays special) while neither of them is working. His eight-frame
+  walk cycle includes swinging arms, coat and ponytail. He introduces himself as a mighty
   pirate (Clawd sometimes gets his name wrong) and then, with little nods to the games:
   shouts "BUH!" and scares both off; brings a treasure map, Messy digs up the chest and the
   treasure is... a T-shirt; points at a three-headed monkey and steals Clawd's coffee; fights Clawd
@@ -71,6 +76,66 @@ Swipe left or right through seven pages:
    `settings.json` on the Presto)
 7. **APPS**: every other `*.py` in the root as a tile (except config and `sdcard.py`, see `HIDDEN` in
    `desk/apps.py`, 12 at most). A tap resets the Presto into that app; the next reset brings the start screen back.
+
+## Qw/ST Pad
+
+The optional Pimoroni Qw/ST Pad works alongside touch on the desk. Plug it into the
+Presto's Qw/ST port; it is detected automatically, including after reconnecting.
+The desk also works without a controller. The Retro console requires the pad;
+unplugging it saves and pauses the game until the controller is reconnected.
+
+On the desk, **+ / −** move to the next / previous page. **Left / right**
+also switch pages except on APPS, where the D-pad selects a tile. On SETTINGS,
+**up / down** select a row. **A** opens the selected app or toggles the selected
+setting. **Y** opens APPS; **X** returns to the scene, as does **B** from another
+page. On the scene, **A / B** greet Messy / Clawd. A border marks the selected
+app or setting while a controller is connected.
+
+The **Retro** app provides one ROM list for `.gb`, `.gbc`, `.gg`, `.nes`
+and `.sms`. It discovers games recursively in `/roms` and `/sd/roms`, including
+system subfolders. The native core is imported only after choosing a game.
+A `.gb` cartridge with a CGB hardware flag also selects the color core.
+
+GB, GBC and Game Gear use exact **3× integer scaling**: 480×432 centered on
+480×480 with 24 black pixels above and below. NES and Master System default to **2× integer scaling**: 480×480 for NES
+and usually 480×384 for SMS. Eight original pixels are cropped from each side.
+Press **Y** during play to switch to the complete centered 1× image and back.
+No overlays or stretching.
+The renderer writes directly to the display buffer (`direct_to_fb=True`).
+NES and SMS cap rendering at **30 FPS** while emulating at the original console
+rate (about 60 frames per second). When drawing is too expensive, additional
+images are skipped so the game can keep its speed; 30 displayed FPS are not
+guaranteed for every game. Other systems keep adaptive rendering.
+On the 200 MHz device, the reproducible gameplay benchmark in
+`tests/benchmark_retro_device.py` measures CPU-only and rendered frames separately.
+It loads the core after ROM allocation, matching the app's startup order.
+A visually verified 120-frame stationary sample in Mario 3 level 1-1 measured
+about 60 emulated / 30 displayed FPS with the decoded CHR-ROM cache, up from
+about 15 displayed FPS without it. The 32-entry cache uses an extra 128 KiB and
+avoids repeated decoding/copying during MMC3 bank switches. Earlier world-map figures are not level
+performance measurements. Longer unattended tests can die and return to the map. SMS Sonic reached about 60 / 30
+in both the short test and a 2400-frame (40-second) gameplay test.
+These are specific gameplay samples, not guarantees for every ROM or scene.
+
+
+The D-pad and **A / B** control the game; **−** is SELECT on GB/GBC/NES and
+**+** is START (Pause on Master System). Hold **X + Y** for one second to save
+and return to the desk. In the ROM list, **up / down** select a game,
+**A / +** start it, and **B / X** return to the desk. Tapping a waiting screen
+or ROM list also returns to the desk; gameplay uses the pad exclusively.
+
+Battery RAM is saved next to the ROM as `.sav`; disconnecting saves and pauses,
+and reconnecting resumes. All cores currently run **without audio**. NES uses
+InfoNES and supports mappers 0, 1, 2, 3, 4 and 7. It accepts iNES 1 and ordinary
+NTSC NES 2.0 dumps; extended sizes, submappers and unsupported RAM/CHR layouts
+are rejected. The GB core is Peanut-GB, GBC uses Walnut-CGB, and GG/SMS share
+TotalSMS. Exact upstream revisions and port changes are in each native core's
+`UPSTREAM.txt`, with licenses under `vendor/`.
+
+The driver is `device/lib/gamepad.py`, using the
+[official Qw/ST Pad register mapping](https://github.com/pimoroni/qwstpad-micropython).
+It supports addresses 0x21, 0x23, 0x25 and 0x27 on the external I2C bus
+(SDA GPIO40, SCL GPIO41). Missing controllers are retried once per second.
 
 ## Home Assistant
 
@@ -162,3 +227,25 @@ mpremote fs cp -r device/desk device/lib :
 mpremote fs cp guybrush.rtttl :                     # optional: your own melody
 mpremote reset
 ```
+
+The Retro console also needs its native modules, built against MicroPython
+**v1.26.0** with the ARM embedded GCC toolchain and Python `pyelftools` installed:
+
+```sh
+make -C native/gb MPY_DIR=/path/to/micropython
+make -C native/gbc MPY_DIR=/path/to/micropython
+make -C native/sms MPY_DIR=/path/to/micropython
+make -C native/nes MPY_DIR=/path/to/micropython
+mpremote fs cp native/gb/gbcore.mpy native/gbc/gbccore.mpy native/sms/smscore.mpy native/nes/nescore.mpy :lib/
+```
+
+On NixOS, add `MKDIR=mkdir RM=rm` to the make commands. Generated `.mpy` files
+are not committed. Host checks: `python3 -m unittest discover -s tests -v`.
+The original CPU/video test programs can also be checked directly on a board:
+
+```sh
+mpremote mount tests + exec "KIND='NES'; SCALE=2" + run tests/check_retro_device.py
+```
+
+Use `GBC`, `GG`, `SMS` or `NES` as `KIND`; `SCALE=1/2` selects the NES/SMS
+presentation mode. These checks use no downloaded game data.

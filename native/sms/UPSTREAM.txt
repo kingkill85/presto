@@ -1,0 +1,22 @@
+https://github.com/ITotalJustice/TotalSMS
+Commit 05bbb8bbd931d21653cbb6dd7a75a5b198c86c29
+https://github.com/ITotalJustice/scheduler commit ef78903bb91b681cd0febafb632c3f289a489ede
+https://github.com/ITotalJustice/sn76489 commit 7da8d06e315878b56a7fe9fc641b8c499cc5336e (API header only)
+MIT licenses retained separately under vendor/.
+The scanline renderer now streams one cached 256-pixel line directly to the
+Presto, using stride zero and the SMS_PRESTO_SCANLINE callback; no full-frame
+staging buffer. Blanked rows use the converted backdrop colour rather than
+a raw palette index. GG uses 3x; SMS supports 1x/2x with a centered eight-pixel crop.
+Local changes: WRITE_UNUSED_BANK and SCANLINE_BUFFER are non-static for GOT
+relocation; init_auio passes constant dummy rates to the disabled audio mixer.
+The adapter supplies a silent PSG API (silent_psg.h), not audio emulation.
+SMS_PIXEL_WIDTH=16, native heap allocation, and sms_static_assert are configured
+in the adapter. Other vendor emulation behavior is unchanged.
+- Scanline and expanded output rows use stack storage during frame(); the pixel
+  pointer is cleared afterward. The core retains no pointer into a returned stack.
+- Cached tile bit planes use a fixed expansion table and local packed words,
+  with a byte/nibble reversal for horizontal flipping.
+- save_needed() reports used, dirty cartridge RAM, avoiding unnecessary periodic
+  SD writes for games which never use battery RAM.
+- Copy the background palette into a 128-byte stack buffer per scanline to
+  reduce external-memory palette reads in the pixel loop.

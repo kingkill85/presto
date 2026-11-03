@@ -69,7 +69,7 @@ def draw(now):
     top = FEET_Y - 32 * SCALE
     if _walk["talk"] is None:
         legs, arms, bob, hem, hair = walk_frame(time.ticks_diff(now, _walk["t0"]) * 3 // 2)  # quick steps
-        draw_guybrush(x, flip=_walk["dir"] < 0, legs=legs, arms=arms, hem=hem, hair=hair, scale=SCALE, y=top)
+        draw_guybrush(x, flip=_walk["dir"] < 0, legs=legs, arms=arms, bob=bob, hem=hem, hair=hair, scale=SCALE, y=top)
         return
     ms = time.ticks_diff(now, _walk["talk"])
     draw_guybrush(x, mouth=TALK[(ms // 140) % len(TALK)], scale=SCALE, y=top, front=True)  # facing you

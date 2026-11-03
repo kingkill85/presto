@@ -3,3 +3,12 @@ __pycache__/
 device/*.rtttl
 *.rtttl
 device/ha_config.py
+*.gb
+*.gbc
+*.gg
+*.nes
+*.sms
+*.sav
+native/*/build/
+native/*/common/*.o
+native/*/*.mpy

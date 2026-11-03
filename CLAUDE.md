@@ -43,7 +43,8 @@ A restart loses the agent status until the next poller round (≤30 s).
   - `*.rtttl` melodies (e.g. `guybrush.rtttl`) stay on the device only.
   - `device/desk/scene/gb_sheet.py`: Guybrush in the original look, made
     from a sprite sheet; without it `sprites.py` draws our own fan art. Props use `GB_HAND`, the sheet has no
-    arms-up frame (`GB_ARMS`) and no walk frames (the boots are lifted in code).
+    arms-up frame (`GB_ARMS`) and no walk frames. `sprites.py` synthesizes
+    eight cached walk poses with strides, arm swing, body bob, coat and ponytail motion.
 - Root: only apps, config and `sdcard.py`. Shared helpers go to `lib/` (on
   `sys.path`, so `import tz` works). Exception: `sdcard.py` stays in the root,
   since `.frozen` (with the broken built-in `sdcard`) comes before `/lib`.
@@ -58,6 +59,13 @@ A restart loses the agent status until the next poller round (≤30 s).
 - SD card is mounted at `/sd` using our own `sdcard.py` (the built-in driver
   fails with v2 cards).
 - `lib/tz.py` turns the UTC time from `ntptime` into German local time (CET/CEST).
+- `lib/gamepad.py` handles the optional Qw/ST Pad on external I2C (SDA 40,
+  SCL 41), shared by desk navigation and Game Boy. The desk keeps touch without
+  a pad. Game Boy requires the pad, uses exact 3x scaling (480x432 centered
+  on 480x480 with 24px black bars) without touch controls,
+  saves and pauses on disconnect, and resumes on reconnect. Reconnect is
+  retried once per second; held keys are released on disconnect.
+  Run `python3 -m unittest discover -s tests -v` for focused input checks.
 
 ## The start screen (desk/)
 
@@ -165,3 +173,21 @@ Performance on the Presto (measured, keep in mind when adding things):
   (pimoroni/presto#121), so don't suggest upgrading.
 - Firmware currently on the device: MicroPython 1.26.0, build
   `feature/presto-wireless-august-2025` (2025-08-18).
+
+## Retro console
+
+`device/gb.py` is now a thin entry point for `lib/retro.py`, one ROM list for
+GB, GBC, GG, NES and SMS. `retro_roms.py` discovers supported files recursively
+under `/roms` and `/sd/roms` and imports only the selected core. `.gb` files
+with the CGB header flag select the color core. Kernels: Peanut-GB (`native/gb`),
+Walnut-CGB (`native/gbc`), TotalSMS (`native/sms`, both GG/SMS), InfoNES
+(`native/nes`, mappers 0/1/2/3/4/7). Exact revisions, licenses and local patches
+are recorded next to each native core. All currently omit audio.
+NES/SMS cap display at 30 Hz while emulating at ~60 Hz. Additional images are
+skipped on missed deadlines; demanding games can display substantially fewer
+images. Native scanline/output scratch buffers live on the stack for frame()
+only; no stack pointer may survive the call.
+Handhelds use 3x integer scaling (480x432); NES/SMS default to 2x with eight
+source pixels cropped per side. Y toggles the complete centered 1x image. All use
+direct framebuffer writes. Pad disconnect saves and pauses; X+Y exits.
+The desk remains touch-controlled without a pad. ROMs and saves stay out of git.

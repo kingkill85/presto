@@ -1,0 +1,5 @@
+https://github.com/Mr-PauI/Walnut-CGB
+Commit a42c186917516cc9c80515ceae1121600a071628
+vendor/walnut_cgb.h is unchanged. MIT license is in vendor/LICENSE.
+Adapter adds the missing forward declaration, bounded 8/16/32-bit ROM reads,
+byte-swapped RGB565 output, cached integer scaling, and disables sound.

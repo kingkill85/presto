@@ -23,6 +23,20 @@ P8 = {
 
 # Icons: "#" main colour, "o" light colour, "+" accent colour, "." transparent.
 ART = {
+    "gamepad": (
+        "............",
+        "..########..",
+        ".##########.",
+        "####o####+##",
+        "###ooo##+###",
+        "####o#######",
+        "#####..#####",
+        "####....####",
+        ".##......##.",
+        "............",
+        "............",
+        "............",
+    ),
     "horizon": (
         "....####....",
         "..########..",
@@ -209,6 +223,7 @@ ART = {
 
 # file: (label, icon, "#", "o", "+")
 APPS = {
+    "gb.py": ("Retro", "gamepad", "lavender", "white", "pink"),
     "attitude_indicator.py": ("Horizont", "horizon", "blue", "white", "brown"),
     "awesome_game.py": ("Spiel", "bomb", "black", "white", "orange"),
     "cheerlights_bulb.py": ("Lampe", "bulb", "yellow", "white", "silver"),

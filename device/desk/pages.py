@@ -17,6 +17,7 @@ from desk.scene.scene import draw_weather_icon
 
 wlan = network.WLAN(network.STA_IF)
 VIEWS = ("scene", "today", "agents", "pipelines", "home", "settings", "apps")  # swipe order
+pad_focus = None  # (view, index), only visible when a gamepad is connected
 
 MINI_HAMSTER = (".#....#.", "########", "##.##.##", "########", ".######.")
 MINI_CLAWD = (".######.", ".#.##.#.", "########", ".######.", ".#.#.#.#")
@@ -637,7 +638,7 @@ SETTING_Y0, SETTING_H = 32, 38
 
 
 def settings_key(now):
-    return tuple(prefs.settings[key] for key, _, _ in SETTING_ROWS)
+    return tuple(prefs.settings[key] for key, _, _ in SETTING_ROWS), pad_focus
 
 
 def draw_settings(now):
@@ -645,7 +646,8 @@ def draw_settings(now):
     for i, (key, label, hint) in enumerate(SETTING_ROWS):
         y = SETTING_Y0 + i * SETTING_H
         on = prefs.settings[key]
-        draw_panel(6, y, WIDTH - 12, SETTING_H - 4)
+        draw_panel(6, y, WIDTH - 12, SETTING_H - 4,
+                   TEXT_PEN if pad_focus == ("settings", i) else None)
         display.set_pen(TEXT_PEN if on else MUTED)
         display.text(label, 16, y + 5, -1, 2)
         display.set_pen(MUTED)
@@ -684,7 +686,7 @@ def app_slot(i):
 
 
 def apps_key(now):
-    return _starting
+    return _starting, pad_focus
 
 
 def draw_apps(now):
@@ -697,7 +699,8 @@ def draw_apps(now):
         return
     for i, (_, label, art, pens) in enumerate(found):
         x, y = app_slot(i)
-        draw_panel(x, y, APP_W, APP_H, TEXT_PEN if i == _starting else None)
+        draw_panel(x, y, APP_W, APP_H,
+                   TEXT_PEN if i == _starting or pad_focus == ("apps", i) else None)
         draw_colour_art(art, pens, x + (APP_W - 24) // 2, y + 4, 2)
         display.set_pen(TEXT_PEN)
         display.text(label, x + (APP_W - display.measure_text(label, 1)) // 2, y + 32, -1, 1)

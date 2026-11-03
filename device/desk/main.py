@@ -42,6 +42,8 @@
 import network
 import time
 
+from gamepad import A, B, DOWN, LEFT, RIGHT, SELECT, START, UP, X, Y, Gamepad
+
 from desk import leds, pages, sound
 from desk.data import ha, herdr
 from desk.gfx import WIDTH, presto, touch
@@ -100,6 +102,65 @@ failed_at = None  # when the last pipeline failed
 DONE_MS = 2 * 60 * 1000  # how long Clawd holds up the tick: a finished agent nobody looked at stays "done"
 done_at = None  # when the combined agent status turned "done"
 frame = 0
+pad = Gamepad()
+pad_setting = pad_app = 0
+
+
+def change_view(name):
+    global view
+    view = name
+    sound.on_scene = view == "scene"
+    if view != "scene":
+        sound.stop_music()
+
+
+def handle_gamepad(now):
+    global pad_setting, pad_app
+    pad.poll(now)
+    actions, pressed = pad.actions, pad.pressed
+    if pressed & X or (pressed & B and view != "scene"):
+        change_view("scene")
+    elif pressed & Y:
+        change_view("apps")
+    elif pressed & (START | SELECT):
+        i = pages.VIEWS.index(view) + (1 if pressed & START else -1)
+        change_view(pages.VIEWS[i % len(pages.VIEWS)])
+    elif view == "apps":
+        from desk import apps
+
+        found = apps.get()
+        if found:
+            if actions & LEFT:
+                pad_app = max(0, pad_app - 1)
+            elif actions & RIGHT:
+                pad_app = min(len(found) - 1, pad_app + 1)
+            elif actions & UP:
+                pad_app = max(0, pad_app - pages.APP_COLS)
+            elif actions & DOWN:
+                pad_app = min(len(found) - 1, pad_app + pages.APP_COLS)
+            if pressed & A:
+                x, y = pages.app_slot(pad_app)
+                pages.tap_apps(x + 1, y + 1, now)
+    else:
+        if actions & (LEFT | RIGHT):
+            i = pages.VIEWS.index(view) + (1 if actions & RIGHT else -1)
+            change_view(pages.VIEWS[i % len(pages.VIEWS)])
+        elif view == "settings":
+            if actions & UP:
+                pad_setting = (pad_setting - 1) % len(pages.SETTING_ROWS)
+            elif actions & DOWN:
+                pad_setting = (pad_setting + 1) % len(pages.SETTING_ROWS)
+            if pressed & A:
+                pages.tap_settings(16, pages.SETTING_Y0 + pad_setting * pages.SETTING_H)
+        elif view == "scene":
+            if pressed & A:
+                poke((0, 0), now)
+            elif pressed & B:
+                poke((WIDTH - 1, 0), now)
+    if pad.connected and view in ("apps", "settings"):
+        pages.pad_focus = (view, pad_app if view == "apps" else pad_setting)
+    else:
+        pages.pad_focus = None
 
 
 def handle_touch(now):
@@ -116,10 +177,7 @@ def handle_touch(now):
         dx = touch_last[0] - touch_start[0]
         if abs(dx) > 40:
             i = pages.VIEWS.index(view) + (1 if dx < 0 else -1)
-            view = pages.VIEWS[i % len(pages.VIEWS)]
-            sound.on_scene = view == "scene"
-            if view != "scene":
-                sound.stop_music()
+            change_view(pages.VIEWS[i % len(pages.VIEWS)])
         elif view == "scene":
             tapped = touch_start
         elif view == "settings":
@@ -127,6 +185,11 @@ def handle_touch(now):
         elif view == "apps":
             pages.tap_apps(touch_start[0], touch_start[1], now)
     was_touched = touch.state
+    poke(tapped, now)
+
+
+def poke(tapped, now):
+    global name_tag
     if not tapped or director:
         return
     if tapped[0] < WIDTH // 2:
@@ -299,6 +362,7 @@ while True:
     last_now = now
 
     handle_touch(now)
+    handle_gamepad(now)
     if (not director and messy.state not in ("wheel", "broken") and clawd.state not in ("work", "alert")
             and visit_due(now) and not seasons.bedtime(now)):  # only when neither is busy working
         director = Visit(messy, clawd, now)

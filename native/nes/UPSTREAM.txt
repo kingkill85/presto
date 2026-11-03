@@ -1,0 +1,39 @@
+https://github.com/jay-kumogata/InfoNES
+Commit fe3295c0a86bf5bbecc22aeab3b3af11f6f47908
+Apache-2.0 license retained in vendor/LICENSE. Source authorship notices retained.
+Only mappers 0,1,2,3,4,7 are included. No FDS, NSF or audio mixer.
+Port changes:
+- .cpp core sources compiled as C; enum Map1_Size_t is explicitly qualified.
+- MapperTable and PPU_MirrorTable are const for the native dynamic linker.
+- The static pbyPrevBank cache is a global BSS array for GOT relocation.
+- Mask palette indices to the hardware six bits before table lookup.
+- Fix APU_Reg[0x4015] to use its 0x15 register-array index.
+- Sequence K6502 absolute-address operand reads to avoid PC++ undefined behavior.
+- WorkFrame is one scanline, streamed through retro_nes_line; unused FDS DRAM
+  storage is omitted. Palette indices retain InfoNES's sprite priority bit.
+- The adapter supplies muted APU glue, checked iNES loading, frame yielding,
+  RGB565 palette conversion, input mapping and a live battery-RAM view.
+- 1x output or exact 2x with eight source pixels cropped per side; scanlines
+  are cached as packed 32-bit pixels and written sequentially.
+- Accept bounded ordinary NTSC NES 2.0 dumps, reject unsupported extended
+  sizes/submappers/RAM layouts, and load iNES trainer data into SRAM.
+The earlier Agnes candidate was replaced after measuring only ~13 FPS.
+- CPU registers and elapsed cycles stay local during a scanline and are written
+  back afterward; MMIO callbacks do not access these registers. Operand helpers
+  are macros so they use the same local CPU state.
+- The scanline and packed output row live on the native stack, avoiding slow
+  external-RAM accesses. WorkFrame is valid only during frame().
+- CHR expansion uses a 16-entry bit-plane table and two aligned 32-bit writes
+  per eight pixels instead of eight byte writes.
+- Skip empty Map0_PPU callbacks in the scanline renderer (all supported mappers
+  use this no-op) and empty render-screen callbacks. Nonempty callbacks remain.
+  Review the cached scanline callback if adding mappers with changing PPU hooks.
+- Cache 32 decoded 1 KiB CHR-ROM banks in 128 KiB of native BSS. Rendering and
+  sprite-zero lookup follow mapped cache pointers instead of recopying decoded
+  banks on every MMC3 swap. Round-robin eviction excludes all active mappings;
+  CHR RAM uses the original dirty-bank decoder. init clears all cache metadata.
+- chr_stats() returns and resets SetupChr call and actual bank-decode counts.
+  In the verified SMB3 1-1 sample, 120 frames previously decoded 1920 banks;
+  the warmed cache decodes none. Framebuffer CRCs at frames 60/120 match.
+Reference: https://www.nesdev.org/wiki/Programming_MMC3
+SMB3 disassembly: https://github.com/captainsouthbird/smb3

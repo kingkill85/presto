@@ -320,9 +320,21 @@ GB_SWING = {
           (14, 19, "c"), (14, 20, "c"), (15, 21, "c"), (15, 22, "k")),
     "b": ((12, 19, "c"), (11, 20, "c"), (11, 21, "c"), (10, 22, "k")),
 }
-# The walk cycle: (legs, arms, bob in screen px, coat hem shift, ponytail lift)
-GB_WALK = (("far", "a", 0, 1, 0), ("stand", "down", 0, 0, 1), ("near", "b", 0, -1, 0), ("stand", "down", 0, 0, 1))
-GB_STEP_MS = 140  # per walk frame
+# Contact, weight transfer, passing, lift; then the other foot leads.
+# (legs, arms, bob in screen px, coat hem shift, ponytail lift)
+GB_WALK = (("far", "a", 0, 1, 0), ("far_down", "a", 0, 1, 0),
+           ("far_pass", "down", -GB, 0, 1), ("far_up", "b", -GB, -1, 1),
+           ("near", "b", 0, -1, 0), ("near_down", "b", 0, -1, 0),
+           ("near_pass", "down", -GB, 0, 1), ("near_up", "a", -GB, 1, 1))
+GB_STEP_MS = 80
+# Each leg: (stride at the toe, foot lift). The planted boot slides back as
+# the body travels forward. Passing poses extend it to cancel the body rise.
+SHEET_STRIDES = {
+    "far": ((2, 0), (-2, 0)), "far_down": ((1, 0), (-1, 1)),
+    "far_pass": ((0, 0), (0, 2)), "far_up": ((-1, 0), (2, 1)),
+    "near": ((-2, 0), (2, 0)), "near_down": ((-1, 1), (1, 0)),
+    "near_pass": ((0, 2), (0, 0)), "near_up": ((2, 1), (-1, 0)),
+}
 # Arms thrown up in a V: the sleeves (cols 3 and 13, rows 14-22) move up here
 GB_ARMS_UP = (
     (2, 13, "C"), (3, 13, "c"), (1, 12, "C"), (2, 12, "c"), (0, 11, "C"), (1, 11, "c"),
@@ -346,7 +358,7 @@ try:
 except ImportError:
     gb_sheet = None
 # Where things are in the sheet's side view (facing right) and front view
-SHEET_LEG_ROWS = range(23, 32)
+SHEET_LEG_ROWS = range(25, 32)
 SHEET_FAR, SHEET_NEAR = (2, 3, 4), (5, 6, 7, 8)  # leg columns
 SHEET_HEM = (20, 21, 22)
 SHEET_MOUTHS = ((), ((7, 5),), ((7, 5), (6, 6), (7, 6)))
@@ -359,33 +371,49 @@ else:
     GB_HAND, GB_HAND_L, GB_ARMS = (13 * GB, 22 * GB), -GB, True
 
 
-def sheet_sprite(flip, legs, mouth, hem, front):
-    """The sheet's frame on our grid; walking lifts one boot after the other
-    (the sheet has no walk frames), the coat's hem swings."""
+def sheet_sprite(flip, legs, arms, mouth, hem, hair, front):
+    """Pose the original art in layers; cache the resulting runs, not grids."""
     art = gb_sheet.FRONT if front else gb_sheet.SIDE
     cols = GB_W + 2 * GB_OFF
     left = (cols - len(art[0])) // 2
-    g = [["."] * cols for _ in range(32)]
+    g = [["."] * cols for _ in range(33)]  # one extra row for the planted boot
     for r, row in enumerate(art):
         shift = hem if r in SHEET_HEM and not front else 0
         for c, ch in enumerate(row):
             if ch != "." and 0 <= left + c + shift < cols:
                 g[r][left + c + shift] = ch
-    if not front and legs != "stand":
-        # the lifted leg goes up a row and swings: the far one back, the near one forward
-        lift, dx = (SHEET_FAR, -1) if legs == "far" else (SHEET_NEAR, 1)
-        cells = {}
+    if not front and legs in SHEET_STRIDES:
+        rise = 1 if legs.endswith(("_pass", "_up")) else 0
         for r in SHEET_LEG_ROWS:
             for c in SHEET_FAR + SHEET_NEAR:
-                ch = art[r][c] if c < len(art[r]) else "."
-                if ch != ".":
-                    cells[(c, r)] = ch
-                    g[r][left + c] = "."
-        for part in (SHEET_FAR, SHEET_NEAR):  # far leg first, the near one in front of it
-            up, side = (1, dx) if part is lift else (0, 0)
-            for (c, r), ch in cells.items():
-                if c in part and 0 <= left + c + side < cols:
-                    g[r - up][left + c + side] = ch
+                g[r][left + c] = "."
+        for part, (stride, lift) in zip((SHEET_FAR, SHEET_NEAR), SHEET_STRIDES[legs]):
+            for r in SHEET_LEG_ROWS:
+                # Keep the hips together, bend the knee, swing the boots.
+                side = int(stride * (r - 25) / 6)
+                up = lift if r >= 28 else lift * (r - 25) // 3
+                for c in part:
+                    ch = art[r][c]
+                    if ch != ".":
+                        g[r + rise - up][left + c + side] = ch
+                        if rise and r == 25:
+                            g[r][left + c] = ch  # bridge hip to extended leg
+        # Swing the lower sleeve and hand from the shoulder, opposite the legs.
+        swing = -1 if arms == "a" else 1 if arms == "b" else 0
+        for r in range(14, 21):
+            for c in (3, 4, 5):
+                g[r][left + c] = art[r][2]  # coat behind the moving arm
+        for r in range(14, 21):
+            side = int(swing * 2 * (r - 14) / 6)
+            for c in (3, 4, 5):
+                g[r][left + c + side] = art[r][c]
+        if hair:
+            tail = [(c, r, art[r][c]) for r in range(4, 10) for c in range(3)
+                    if art[r][c] in "cde"]
+            for c, r, _ in tail:
+                g[r][left + c] = "."
+            for c, r, ch in tail:
+                g[r - 1][left + c] = ch
     for c, r in (SHEET_FRONT_MOUTHS if front else SHEET_MOUTHS)[mouth]:
         g[r][left + c] = "t"
     if flip:
@@ -405,7 +433,7 @@ def guybrush_sprite(flip, legs, arms, mouth, hem=0, hair=0, front=False):
     if runs is not None:
         return runs
     if gb_sheet:
-        runs = _gb_cache[key] = sheet_sprite(flip, legs, mouth, hem, front)
+        runs = _gb_cache[key] = sheet_sprite(flip, legs, arms, mouth, hem, hair, front)
         return runs
     cols = GB_W + 2 * GB_OFF
     g = [["."] * cols for _ in range(32)]
@@ -414,7 +442,8 @@ def guybrush_sprite(flip, legs, arms, mouth, hem=0, hair=0, front=False):
         if 0 <= r < 32 and 0 <= c + GB_OFF < cols:
             g[r][c + GB_OFF] = ch
 
-    for r, row in enumerate((GB_FRONT if front else GB_BODY) + GB_LEGS[legs]):
+    fallback_legs = legs.split("_")[0]  # the fan-art fallback has three leg poses
+    for r, row in enumerate((GB_FRONT if front else GB_BODY) + GB_LEGS[fallback_legs]):
         shift = hem if r in GB_HEM else 0
         for c, ch in enumerate(row):
             if ch != ".":
@@ -462,7 +491,8 @@ def guybrush_sprite(flip, legs, arms, mouth, hem=0, hair=0, front=False):
 
 def draw_guybrush(gx, flip=False, legs="stand", arms="down", mouth=0, bob=0, hem=0, hair=0, scale=GB, y=GB_Y,
                   front=False):
-    blit(guybrush_sprite(flip, legs, arms, mouth, hem, hair, front), gx, y + bob, scale)
+    # Bob is expressed in default-size pixels; reminders use a smaller sprite.
+    blit(guybrush_sprite(flip, legs, arms, mouth, hem, hair, front), gx, y + bob * scale // GB, scale)
 
 
 def walk_frame(ms):
