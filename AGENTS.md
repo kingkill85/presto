@@ -21,6 +21,21 @@ features and setup, and `CLAUDE.md` for further architectural context.
 - `device/lib/` holds shared helpers, including `haclient.py` (non-blocking
   Home Assistant client) and `tz.py` (German CET/CEST conversion from UTC).
   This directory is on the device's `sys.path`.
+- `device/lib/ambient_sensor.py` polls the optional LTR559 at 0x23 without
+  sleeping. Bound I2C operations, rate-limit reconnects and use wrapping ticks.
+  Missing/stale sensors restore the normal backlight gradually; preserve the
+  existing sun-based scene colours and bedtime. Proximity reactions must not
+  interrupt external status or other directors. Covering the sensor invites
+  Guybrush with `scene/lantern.py`; the actors never carry sensor-triggered lights.
+  Distinguish LTR559 identity from a Qw/ST Pad at the shared alternate 0x23 address.
+- `device/lib/climate_sensor.py` reads the optional BME280 at 0x76 with forced
+  measurements split across frames. Clear missing/invalid values, retry with
+  backoff, and include the rounded values in the Home Assistant page's redraw key.
+  Reserve the climate tile and battery warning heights when laying out rooms.
+- `device/lib/darkness.py` debounces room-darkness transitions separately from
+  proximity (3/8 lux hysteresis, five-minute cooldown). `scene/lantern.py` draws
+  Guybrush behind both actors without owning their status. Avoid overlapping
+  pirate visits/reminders; preserve bedtime and cancel on sensor loss.
 - `device/lib/gamepad.py` reads the optional Qw/ST Pad on external I2C
   (GPIO40/41). Desk navigation and Game Boy share it. Keep the desk usable by
   touch without a pad. Game Boy requires a pad, saves and pauses on disconnect,

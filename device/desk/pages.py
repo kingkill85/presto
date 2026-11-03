@@ -17,6 +17,7 @@ from desk.scene.scene import draw_weather_icon
 
 wlan = network.WLAN(network.STA_IF)
 VIEWS = ("scene", "today", "agents", "pipelines", "home", "settings", "apps")  # swipe order
+climate = None  # optional BME280, supplied by the main loop
 pad_focus = None  # (view, index), only visible when a gamepad is connected
 
 MINI_HAMSTER = (".#....#.", "########", "##.##.##", "########", ".######.")
@@ -169,6 +170,7 @@ def today_key(now):
 def draw_today(now):
     day = herdr.day
     draw_header(CALENDAR, 10, 9, ALERT_PEN, "HEUTE")
+    bottom = BOTTOM
     if not day:
         draw_waiting("Waiting for the daily note...", "comes with the pipeline poller")
         return
@@ -192,7 +194,7 @@ def draw_today(now):
     if day["events"]:
         y = draw_label("TERMINE", y)
         for e in day["events"]:
-            if y + ROW > BOTTOM:
+            if y + ROW > bottom:
                 return
             if e is nxt:
                 draw_panel(6, y - 2, WIDTH - 12, ROW + 2)
@@ -207,7 +209,7 @@ def draw_today(now):
     if day["tasks"]:
         y = draw_label("AUFGABEN", y)
         for i, task in enumerate(day["tasks"]):
-            if y + ROW > BOTTOM:
+            if y + ROW > bottom:
                 display.set_pen(MUTED)
                 display.text("+%d" % (len(day["tasks"]) - i), WIDTH - 30, y - ROW, -1, 1)
                 return
@@ -557,14 +559,33 @@ def draw_pipelines(now):
 
 # --- home ----------------------------------------------------------------------
 
+def draw_climate(bottom):
+    values = climate.values if climate else None
+    if values is None:
+        return bottom
+    y = bottom - 40
+    draw_panel(6, y, WIDTH - 12, 36)
+    display.set_pen(MUTED)
+    display.text("RAUMKLIMA", 14, y + 5, -1, 1)
+    temperature, humidity, pressure = values
+    draw_degrees("%.1f" % temperature, 14, y + 17, 2, TEXT_PEN)
+    display.set_pen(TEXT_PEN)
+    display.text("%d%%" % humidity, 108, y + 17, -1, 2)
+    display.text("%d hPa" % pressure, 168, y + 21, -1, 1)
+    return y - 4
+
+
 def home_key(now):
-    return ha.version(), tick_if(ha.low_batteries(), now, 500)
+    return (ha.version(), tick_if(ha.low_batteries(), now, 500),
+            climate.values if climate else None)
 
 
 def draw_home(now):
     person = ha.person_state()
     at_home = person and person["state"] == "home"
     draw_header(HOUSE, 10, 9, TICK_PEN if at_home else IDLE_PEN, "HOME")
+    low = ha.low_batteries()
+    bottom = draw_climate(216 if low else BOTTOM)
     if not ha.HA_TOKEN or not ha.ready():
         draw_waiting("Waiting for Home Assistant...")
         return
@@ -573,9 +594,8 @@ def draw_home(now):
         display.set_pen(TICK_PEN if at_home else MUTED)
         display.text(word, WIDTH - 12 - display.measure_text(word, 1), 20, -1, 1)
     draw_weather_tile()
-    draw_rooms()
+    draw_rooms(bottom)
     # low batteries, one at a time
-    low = ha.low_batteries()
     if low:
         text = "BATTERIE " + low[(now // 3000) % len(low)]
         display.set_pen(FAIL_PEN if (now // 500) % 2 else MUTED)
@@ -585,7 +605,7 @@ def draw_home(now):
 def draw_weather_tile():
     cond, night = ha.weather()
     w = ha.weather_state()
-    draw_panel(6, 32, WIDTH - 12, 58)
+    draw_panel(6, 32, WIDTH - 12, 46)
     draw_weather_icon(cond, night, 18, 41, 4)
     if not w:
         return
@@ -605,15 +625,20 @@ def draw_weather_tile():
     display.text(info, WIDTH - 14 - display.measure_text(info, 1), 58, -1, 1)
 
 
-def draw_rooms():
+def draw_rooms(bottom):
     """Per room: light bulb, name, temperature and a flame while heating."""
-    y = 96
-    for label, temp_id, light_id in ha.HAC.ROOMS:
+    y = 84
+    rooms = ha.HAC.ROOMS
+    compact = len(rooms) * 19 > bottom - y
+    row, scale, icon_scale = (14, 1, 2) if compact else (19, 2, 3)
+    capacity = max(0, (bottom - y) // row)
+    shown = capacity - 1 if len(rooms) > capacity else len(rooms)
+    for label, temp_id, light_id in rooms[:max(0, shown)]:
         light = ha.state(light_id)
         on = light and light["state"] == "on"
-        draw_art(BULB, 12, y + 2, 3, ALERT_PEN if on else BULB_OFF_PEN)
+        draw_art(BULB, 12, y + 2, icon_scale, ALERT_PEN if on else BULB_OFF_PEN)
         display.set_pen(TEXT_PEN if on else MUTED)
-        display.text(label, 34, y + 2, -1, 2)
+        display.text(shorten(label, 21 if compact else 10), 28 if compact else 34, y + 2, -1, scale)
         st = ha.state(temp_id)
         if st:
             a = st["attributes"]
@@ -622,11 +647,14 @@ def draw_rooms():
                 text = "%.1f" % float(value)
             except (TypeError, ValueError):
                 text = "--"
-            tw = display.measure_text(text, 2) + 10
-            draw_degrees(text, WIDTH - 14 - tw, y + 2, 2, TEXT_PEN)
+            tw = display.measure_text(text, scale) + 10
+            draw_degrees(text, WIDTH - 14 - tw, y + 2, scale, TEXT_PEN)
             if a.get("hvac_action") == "heating":
-                draw_art(FLAME, WIDTH - 32 - tw, y + 2, 3, FLAME_PEN)
-        y += 19
+                draw_art(FLAME, WIDTH - 32 - tw, y + 2, icon_scale, FLAME_PEN)
+        y += row
+    if len(rooms) > capacity and capacity:
+        display.set_pen(MUTED)
+        display.text("+%d weitere Raeume" % (len(rooms) - max(0, shown)), 12, y + 2, -1, 1)
 
 
 # --- settings ------------------------------------------------------------------

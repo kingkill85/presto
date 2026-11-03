@@ -52,6 +52,12 @@ class Gamepad:
                 for address in ADDRESSES:
                     try:
                         self.bus.readfrom_mem_into(address, 0, self.buffer)
+                        # 0x23 is also the Multi-Sensor Stick's LTR559 address.
+                        # Check its identity before writing any pad configuration.
+                        if address == 0x23:
+                            self.bus.readfrom_mem_into(address, 0x86, self.buffer)
+                            if self.buffer[0] == 0x92 and self.buffer[1] == 0x05:
+                                continue
                         # Inputs, active low; leave LED pins as inputs (LEDs off).
                         self.bus.writeto_mem(address, 6, b"\xff\xff")
                         self.bus.writeto_mem(address, 4, b"\x00\x00")

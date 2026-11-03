@@ -100,6 +100,19 @@ class GamepadTests(unittest.TestCase):
         self.assertEqual(self.bus.reads, 4)
         self.assertFalse(self.pad.connected)
 
+    def test_sensor_at_23_is_not_mistaken_for_gamepad(self):
+        self.bus.address = 0x23
+        original = self.bus.readfrom_mem_into
+        def read(address, register, buffer):
+            original(address, register, buffer)
+            if register == 0x86:
+                buffer[0], buffer[1] = 0x92, 0x05
+        self.bus.readfrom_mem_into = read
+        self.bus.writeto_mem = lambda *args: self.fail('Sensor configured as a pad')
+        self.pad.poll(0)
+        self.assertFalse(self.pad.connected)
+        self.assertEqual(self.pad.buttons, 0)
+
     def test_alternate_address(self):
         self.bus.address = 0x27
         self.pad.poll(0)

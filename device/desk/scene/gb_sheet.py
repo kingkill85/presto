@@ -2,6 +2,8 @@
 # Made from a sprite sheet (fan use).
 
 COLOURS = {"b": (219, 125, 104), "c": (167, 95, 60), "d": (137, 71, 17), "e": (101, 56, 22), "g": (91, 2, 2), "h": (101, 0, 1), "i": (81, 0, 1), "j": (46, 18, 53), "k": (47, 1, 44), "l": (30, 0, 100), "m": (57, 0, 7), "q": (13, 0, 82), "r": (0, 0, 65), "t": (0, 0, 23)}
+# Small, muted pupils and a subtle skin highlight for the front-facing head.
+COLOURS.update({"u": (58, 40, 36), "s": (225, 155, 125)})
 SIDE = (
     "...cdddc.",
     "...ddddd.",
@@ -39,9 +41,9 @@ SIDE = (
 FRONT = (
     "......dccd........",
     "....ddcdddd.......",
-    "....ddeebedd......",
-    "....eeebecec......",
-    "...d.ebbbced......",
+    "....ddbbbbd.......",
+    "....dbubbud.......",
+    "...d.cbsscd.......",
     ".....bbdccd.e.....",
     ".....edbbde.......",
     "....lhbddbgl......",

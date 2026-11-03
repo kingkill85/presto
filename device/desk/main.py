@@ -42,6 +42,9 @@
 import network
 import time
 
+from climate_sensor import ClimateSensor
+from darkness import Darkness
+from ambient_sensor import AmbientSensor
 from gamepad import A, B, DOWN, LEFT, RIGHT, SELECT, START, UP, X, Y, Gamepad
 
 from desk import leds, pages, sound
@@ -53,6 +56,7 @@ from desk.scene.actors import DIRECTED, FREE, Clawd, Messy
 from desk.scene.directors import Ball
 from desk.scene.pirate import Visit, visit_due
 from desk.scene.duo import Duo
+from desk.scene.lantern import Lantern
 from desk.scene.scene import WHEEL_CX
 from desk.scene.sprites import BASE_Y, C_BASE_Y, CS, S
 
@@ -103,6 +107,14 @@ DONE_MS = 2 * 60 * 1000  # how long Clawd holds up the tick: a finished agent no
 done_at = None  # when the combined agent status turned "done"
 frame = 0
 pad = Gamepad()
+ambient = AmbientSensor()
+climate = ClimateSensor()
+pages.climate = climate
+scene.climate = climate
+darkness = Darkness()
+lantern = None
+backlight_shown = 1.0
+ambient_search_seen = False
 pad_setting = pad_app = 0
 
 
@@ -218,6 +230,8 @@ def next_state(actor, other, now):
         actor.start("sleep")
         return
     name = actor.pick(other.state)
+    if lantern and name in ("ball", "duo"):
+        name = "look"
     if name == "ball":
         director = Ball(messy, clawd)
     elif name == "duo":
@@ -337,6 +351,29 @@ def pose(now, k):
     return wear
 
 
+def handle_ambient(now, dt):
+    global lantern, backlight_shown, ambient_search_seen
+    ambient.poll(now)
+    level = ambient.brightness(dt)
+    if abs(level - backlight_shown) >= 0.01:
+        presto.set_backlight(level)
+        backlight_shown = level
+    leds.ambient_scale = 0.25 + 0.75 * level
+    if not ambient.covered:
+        ambient_search_seen = False
+    blocked = seasons.bedtime(now) or view != 'scene'
+    if not ambient.connected or blocked or director or reminder.active():
+        return
+    if lantern:
+        # A hand over the sensor during a visit must not queue another visit.
+        if ambient.covered:
+            ambient_search_seen = True
+        return
+    if ambient.covered and not ambient_search_seen:
+        ambient_search_seen = True
+        lantern = Lantern(now, messy, clawd)
+
+
 def update_leds(now):
     """Status signals (LEDS switch) beat the animation lights (ANIM LIGHTS)."""
     status, own = None, ()
@@ -363,7 +400,7 @@ while True:
 
     handle_touch(now)
     handle_gamepad(now)
-    if (not director and messy.state not in ("wheel", "broken") and clawd.state not in ("work", "alert")
+    if (not director and not lantern and messy.state not in ("wheel", "broken") and clawd.state not in ("work", "alert")
             and visit_due(now) and not seasons.bedtime(now)):  # only when neither is busy working
         director = Visit(messy, clawd, now)
     if messy.timed_out(now):
@@ -379,14 +416,25 @@ while True:
     follow_pipelines(now)
     follow_agents(now)
 
+    climate.poll(now)
+    handle_ambient(now, min(100, int(k * 66)))
+    if lantern and (view != "scene" or seasons.bedtime(now) or not ambient.connected
+                    or ambient.lux is None or ambient.light_at is None
+                    or time.ticks_diff(now, ambient.light_at) > 3000):
+        lantern = None
+    if darkness.poll(now, ambient, view == "scene" and not director and not lantern
+                     and not reminder.active() and not seasons.bedtime(now)):
+        lantern = Lantern(now, messy, clawd)
+    if lantern and not lantern.update(now, k):
+        lantern = None
     wear = pose(now, k)
     critters.update(now, k, messy, clawd, cp, seasons.bedtime(now))
-    reminder.update(now, k, isinstance(director, Visit))  # not while he's really here
+    reminder.update(now, k, (isinstance(director, Visit) or lantern is not None))  # not while he's really here
     particles.update(k)
 
     if view == "scene":
         seasons.spawn(now, k)
-        scene.draw(now, messy, hp, clawd, cp, director, wear)
+        scene.draw(now, messy, hp, clawd, cp, director, wear, lantern)
         pages.draw_page_dots("scene")
         pages.forget()
         redraw = True

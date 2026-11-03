@@ -137,6 +137,37 @@ The driver is `device/lib/gamepad.py`, using the
 It supports addresses 0x21, 0x23, 0x25 and 0x27 on the external I2C bus
 (SDA GPIO40, SCL GPIO41). Missing controllers are retried once per second.
 
+## Optional Multi-Sensor Stick
+
+The desk uses the stick's LTR559 light/proximity sensor when connected. Screen
+backlight and LED intensity fade with room light; the existing sun-based sky,
+clock colours and nighttime routine remain in charge of the scene.
+Without the stick, normal brightness returns smoothly and touch/gamepad control
+continue working. Missing sensors are retried every two seconds.
+
+Hold a hand close to the sensor for about a second to invite Guybrush with his
+lantern. Messy and Clawd do not perform a separate sensor greeting or search. He lights both characters while
+their work status continues unchanged. Holding the sensor covered only triggers
+one visit; release it before inviting him again. Sensor interactions respect
+bedtime, the scene page and other scenes. Missing sensors cannot start visits.
+
+When room light stays below 3 lux for two seconds, Guybrush brings a lantern
+and lights both characters, who keep their current work status. He leaves again
+after a short visit. The trigger rearms above 8 lux, with at least five minutes
+between visits; hand-triggered visits are independent of this automatic darkness cooldown. Visits wait for the
+scene page and other scenes to finish, and respect bedtime and sensor disconnects.
+
+The Home Assistant page shows a compact room-climate tile (temperature in Celsius,
+relative humidity and local pressure in hPa), even while Home Assistant is unavailable. Room rows compact automatically to
+leave space for the sensor values and battery warnings.
+The optional BME280 takes a measurement every five seconds; start and read happen
+on separate frames. Missing sensors hide the tile and retry every two seconds.
+On the main scene, outdoor (sun) and indoor (house) temperatures alternate every
+30 seconds while the local sensor supplies a valid value. Without it, only
+the outdoor value appears; without outdoor data, the indoor value stays visible.
+Pressure is measured at the device, not corrected to sea level; nearby electronics
+can warm the temperature sensor. Motion integration remains future work.
+
 ## Home Assistant
 
 `device/lib/haclient.py` fetches entity states from Home Assistant over plain HTTP

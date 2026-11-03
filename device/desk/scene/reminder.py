@@ -31,6 +31,10 @@ _walk = None  # {"x", "t0", "text", "dir": 1 in / -1 back, "talk": when he stopp
 _done = set()  # (date, time, mark) already shown
 
 
+def active():
+    return _walk is not None
+
+
 def update(now, k, busy):
     """Start a walk when a mark is reached (not while `busy`), move him on:
     in to the middle, turn and talk, then back out to the left."""

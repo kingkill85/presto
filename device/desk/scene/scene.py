@@ -124,22 +124,50 @@ def draw_weather_icon(cond, night, x, y, s):
         draw_art(BOLT_ART, x + 4 * s, y + 7 * s, s, ALERT_PEN)
 
 
-def temperature_text():
-    t = ha.temperature() if ha.weather_state() else None
-    return "%d" % round(t) if t is not None else None
+# Optional local temperature; main supplies the same sensor used by HOME.
+climate = None
+INSIDE_ART = ("..#..", ".###.", "#####", "#.#.#", "#####")
+OUTSIDE_ART = ("#.#.#", ".###.", "#####", ".###.", "#.#.#")
+_corner_text = None
+_corner_inside = False
+_corner_width = 0
+_corner_switch = None
+
+
+def update_corner_temperature(now):
+    global _corner_text, _corner_inside, _corner_width, _corner_switch
+    outside = ha.temperature() if ha.weather_state() else None
+    values = climate.values if climate else None
+    inside = values[0] if values is not None else None
+    if inside is None or outside is None:
+        _corner_inside = inside is not None
+        _corner_switch = None
+    elif _corner_switch is None:
+        _corner_inside = False
+        _corner_switch = time.ticks_add(now, 30000)
+    elif time.ticks_diff(now, _corner_switch) >= 0:
+        _corner_inside = not _corner_inside
+        _corner_switch = time.ticks_add(now, 30000)
+    value = inside if _corner_inside else outside
+    _corner_text = "%d" % round(value) if value is not None else None
+    # Reserve both widths so the date does not jump on every switch.
+    _corner_width = 0
+    for value in (inside, outside):
+        if value is not None:
+            _corner_width = max(_corner_width, display.measure_text("%d" % round(value), 2) + 20)
 
 
 def corner_width():
-    """How much of the top right corner the temperature takes."""
-    temp = temperature_text()
-    return display.measure_text(temp, 2) + 6 if temp else 0  # with the degree sign
+    return _corner_width
 
 
 def draw_corner_weather():
-    """The temperature top right, opposite the weather symbol."""
-    temp = temperature_text()
-    if temp:
-        draw_degrees(temp, WIDTH - 6 - corner_width(), 12, 2, DATE_PEN)  # level with the date
+    """House = local indoor sensor, sun = outdoor weather temperature."""
+    if _corner_text is not None:
+        width = display.measure_text(_corner_text, 2) + 6
+        x = WIDTH - 6 - width
+        draw_art(INSIDE_ART if _corner_inside else OUTSIDE_ART, x - 14, 14, 2, DATE_PEN)
+        draw_degrees(_corner_text, x, 12, 2, DATE_PEN)
 
 
 def draw_next_event(now):
@@ -388,7 +416,7 @@ def draw_props(x, y, props):
 
 # --- the whole scene -------------------------------------------------------------------
 
-def draw(now, messy, hp, clawd, cp, director, wear):
+def draw(now, messy, hp, clawd, cp, director, wear, lantern=None):
     """One frame of the scene. hp and cp are the poses (actors.Pose) of Messy
     and Clawd; the director (ball game, scene for two, pirate) draws its own
     extras."""
@@ -396,6 +424,7 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     jump, c_jump = hp.jump, cp.jump
     draw_ground(now, sky_background(now), ((x + 8 * S, 12 * S - jump), (c_x + 8 * CS, 14 * CS - c_jump)))
     draw_sky(now)
+    update_corner_temperature(now)
     draw_clock(now)
     draw_corner_weather()
     draw_next_event(now)
@@ -404,6 +433,8 @@ def draw(now, messy, hp, clawd, cp, director, wear):
     if ha.weather()[0] == "fog":
         draw_fog(now)
     reminder.draw(now)  # behind everyone
+    if lantern:
+        lantern.draw(now)
 
     # Messy, in the wheel while a pipeline runs or after one failed
     state = messy.state

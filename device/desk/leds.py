@@ -7,6 +7,7 @@ from desk.data import herdr
 from desk.gfx import presto
 
 COUNT = 7
+ambient_scale = 1.0
 _base = [0.0, 0.0, 0.0]  # the shared mood colour, fading
 _shown = [None] * COUNT  # what each LED shows right now
 
@@ -57,6 +58,7 @@ def update(mood, t, own=()):
     base = tuple(int(c) for c in _base)
     for i in range(COUNT):
         rgb = own[i] if i < len(own) and own[i] else base
+        rgb = tuple(int(c * ambient_scale) for c in rgb)
         if rgb != _shown[i]:
             presto.set_led_rgb(i, *rgb)
             _shown[i] = rgb
