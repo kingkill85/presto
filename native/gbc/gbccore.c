@@ -68,7 +68,7 @@ static void on_error(struct gb_s *g, const enum gb_error_e err, const uint16_t a
 }
 
 static void draw_line(struct gb_s *g, const uint8_t *pixels, const uint_fast8_t line) {
-    if (fullscreen) {
+    if (fullscreen == 1) {
         uint16_t *row = fb + (TOP + line * SCALE) * FULL_W;
         for (int x = 0, out = 0; x < LCD_WIDTH; x += 2, out += 3) {
             uint32_t a = (gb.cgb.cgbMode ? __builtin_bswap16(gb.cgb.fixPalette[pixels[x] & 63]) : shades[pixels[x] & 3]);
@@ -82,6 +82,15 @@ static void draw_line(struct gb_s *g, const uint8_t *pixels, const uint_fast8_t 
             for (int x = 0; x < FULL_W / 2; x++) {
                 to[x] = expanded_line[x];
             }
+        }
+        return;
+    }
+    if (fullscreen == 2) {
+        uint32_t *to = (uint32_t *)(fb + (168 + line) * FULL_W + 160);
+        for (int x = 0; x < LCD_WIDTH; x += 2) {
+            uint32_t a = (gb.cgb.cgbMode ? __builtin_bswap16(gb.cgb.fixPalette[pixels[x] & 63]) : shades[pixels[x] & 3]);
+            uint32_t b = (gb.cgb.cgbMode ? __builtin_bswap16(gb.cgb.fixPalette[pixels[x + 1] & 63]) : shades[pixels[x + 1] & 3]);
+            to[x / 2] = a | (b << 16);
         }
         return;
     }
@@ -140,7 +149,8 @@ static mp_obj_t frame(size_t n_args, const mp_obj_t *args) {
     mp_buffer_info_t b;
     mp_get_buffer_raise(args[0], &b, MP_BUFFER_WRITE);
     int x = mp_obj_get_int(args[2]), y = mp_obj_get_int(args[3]);
-    fullscreen = n_args == 6 && mp_obj_is_true(args[5]);
+    fullscreen = n_args == 6 ? mp_obj_get_int(args[5]) : 0;
+    if (fullscreen < 0 || fullscreen > 2) mp_raise_ValueError(MP_ERROR_TEXT("gb: scale"));
     int stride = fullscreen ? FULL_W : FB_W;
     int rows = fullscreen ? FULL_H : FB_H;
     int width = fullscreen ? FULL_W : LCD_WIDTH;
@@ -162,11 +172,52 @@ static mp_obj_t frame(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(frame_obj, 5, 6, frame);
 
+// Versioned, pointer-free context snapshot plus cartridge RAM. The Python
+// slot layer checks ROM identity, exact size and SHA256 before calling load.
+static void state_bind(struct gb_s *g, bool live) {
+    g->gb_rom_read = live ? rom_read : NULL;
+    g->gb_rom_read_16bit = live ? rom_read16 : NULL;
+    g->gb_rom_read_32bit = live ? rom_read32 : NULL;
+    g->gb_cart_ram_read = live ? ram_read : NULL;
+    g->gb_cart_ram_write = live ? ram_write : NULL;
+    g->gb_error = live ? on_error : NULL;
+    g->gb_serial_tx = NULL;
+    g->gb_serial_rx = NULL;
+    g->gb_bootrom_read = NULL;
+    g->display.lcd_draw_line = live ? draw_line : NULL;
+    g->direct.priv = NULL;
+}
+static mp_obj_t state_size(void) { return mp_obj_new_int(sizeof(gb) + cart_ram_len); }
+static MP_DEFINE_CONST_FUN_OBJ_0(state_size_obj, state_size);
+static mp_obj_t save_state(mp_obj_t obj) {
+    mp_buffer_info_t b; mp_get_buffer_raise(obj, &b, MP_BUFFER_WRITE);
+    if (b.len != sizeof(gb) + cart_ram_len) mp_raise_ValueError(MP_ERROR_TEXT("gb: state size"));
+    memcpy(b.buf, &gb, sizeof(gb));
+    state_bind((struct gb_s *)b.buf, false);
+    if (cart_ram_len) memcpy((uint8_t *)b.buf + sizeof(gb), cart_ram, cart_ram_len);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(save_state_obj, save_state);
+static mp_obj_t load_state(mp_obj_t obj) {
+    mp_buffer_info_t b; mp_get_buffer_raise(obj, &b, MP_BUFFER_READ);
+    if (b.len != sizeof(gb) + cart_ram_len) mp_raise_ValueError(MP_ERROR_TEXT("gb: state size"));
+    memcpy(&gb, b.buf, sizeof(gb));
+    state_bind(&gb, true);
+    if (cart_ram_len) memcpy(cart_ram, (uint8_t *)b.buf + sizeof(gb), cart_ram_len);
+    error = 0;
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(load_state_obj, load_state);
+
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_init, MP_OBJ_FROM_PTR(&init_obj));
     mp_store_global(MP_QSTR_set_ram, MP_OBJ_FROM_PTR(&set_ram_obj));
     mp_store_global(MP_QSTR_palette, MP_OBJ_FROM_PTR(&palette_obj));
     mp_store_global(MP_QSTR_frame, MP_OBJ_FROM_PTR(&frame_obj));
+    mp_store_global(MP_QSTR_state_size, MP_OBJ_FROM_PTR(&state_size_obj));
+    mp_store_global(MP_QSTR_save_state, MP_OBJ_FROM_PTR(&save_state_obj));
+    mp_store_global(MP_QSTR_load_state, MP_OBJ_FROM_PTR(&load_state_obj));
+    mp_store_global(MP_QSTR_state_id, mp_obj_new_str("presto-gbc-v1", sizeof("presto-gbc-v1")-1));
     MP_DYNRUNTIME_INIT_EXIT
 }

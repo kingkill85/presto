@@ -14,15 +14,17 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 | --- | --- |
 | `main.py` | Boots into the start screen (`desk.main`), or once into the app picked on its apps page. |
 | `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
-| `gb.py` | Shared Retro console: GB, GBC, Game Gear, NES and Master System; loads only the selected ROM's native core. |
-| `scumm.py` | Experimental SCUMM-v4/v5 port for German Monkey Island VGA and Monkey Island 2, with touch/gamepad input and switchable zoom. |
+| `games.py` | Unified game library with virtual system folders; starts only the selected native engine. |
+| `gb.py` | Internal Retro runtime for GB, GBC, Game Gear, NES and Master System. |
+| `scumm.py` | Internal experimental SCUMM-v4/v5 runtime for German Monkey Island VGA and Monkey Island 2, with touch/gamepad input and switchable zoom. |
 | `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
-| `immich_frame.py` | Photo frame showing random photos from Immich, cached on the SD card. |
 | `sdcard.py` | SD card driver from micropython-lib ([PR #765](https://github.com/micropython/micropython-lib/pull/765), MIT). Stays in the root: `.frozen` comes before `/lib` in `sys.path`, so only here does it replace the built-in one, which fails with "timeout waiting for v2 card" ([pimoroni/presto#79](https://github.com/pimoroni/presto/issues/79)). |
-| `secrets.example.py` | Template for `secrets.py` (WiFi, Immich URL and API key, Home Assistant token). |
+| `secrets.example.py` | Template for `secrets.py` (WiFi and Home Assistant token). |
 
-The other apps on the apps page are Pimoroni's examples from the firmware.
+The app page has one **Spiele** entry for Retro and SCUMM. Bundled Pimoroni demo apps
+and their example images/fonts have been removed; the launcher still discovers
+additional root-level Python apps automatically.
 
 ## Messy and Clawd
 
@@ -92,7 +94,10 @@ setting. **Y** opens APPS; **X** returns to the scene, as does **B** from anothe
 page. On the scene, **A / B** greet Messy / Clawd. A border marks the selected
 app or setting while a controller is connected.
 
-The **Retro** app provides one ROM list for `.gb`, `.gbc`, `.gg`, `.nes`
+The **Spiele** app groups installed games into virtual GB, GBC, Game Gear, NES,
+Master System and Adventures folders. Empty folders are hidden. Selection works
+with touch or the pad; Retro gameplay still requires the pad. Files stay in place.
+The ROM scanner provides one list for `.gb`, `.gbc`, `.gg`, `.nes`
 and `.sms`. It discovers games recursively in `/roms` and `/sd/roms`, including
 system subfolders. The native core is imported only after choosing a game.
 A `.gb` cartridge with a CGB hardware flag also selects the color core.
@@ -100,7 +105,8 @@ A `.gb` cartridge with a CGB hardware flag also selects the color core.
 GB, GBC and Game Gear use exact **3× integer scaling**: 480×432 centered on
 480×480 with 24 black pixels above and below. NES and Master System default to **2× integer scaling**: 480×480 for NES
 and usually 480×384 for SMS. Eight original pixels are cropped from each side.
-Press **Y** during play to switch to the complete centered 1× image and back.
+Use **Vergroesserung** in the shared menu to switch to the complete centered
+1× image and back, including GB/GBC/Game Gear.
 No overlays or stretching.
 The renderer writes directly to the display buffer (`direct_to_fb=True`).
 NES and SMS cap rendering at **30 FPS** while emulating at the original console
@@ -142,10 +148,24 @@ These are specific gameplay samples, not guarantees for every ROM or scene.
 
 
 The D-pad and **A / B** control the game; **−** is SELECT on GB/GBC/NES and
-**+** is START (Pause on Master System). Hold **X + Y** for one second to save
-and return to the desk. In the ROM list, **up / down** select a game,
-**A / +** start it, and **B / X** return to the desk. Tapping a waiting screen
-or ROM list also returns to the desk; gameplay uses the pad exclusively.
+**+** is START (Pause on Master System). **SELECT + START** opens the same game
+menu for every system: resume, save, load, enlargement on/off, restart and return
+to the game library. The chord is consumed before reaching the game; short single
+Start/Select presses are preserved. X+Y no longer exits; Y/Select no longer zoom.
+Menus match the desk's pixel type, sky palette, garland and flat outlined tiles.
+
+There are **five state slots per game**, with a timestamp or "Leer" and confirmation
+before overwriting. GB/GBC/GG/SMS/NES support complete states. SCUMM uses its native
+save format and disables saving/loading when game scripts forbid it. Retro states
+live in `/sd/saves/<game-path-hash>/`; checksum, ROM SHA256, core version and size
+are checked before loading. Temporary files and a recovery backup protect an
+existing slot during replacement. Native state formats may change with core
+updates; battery saves remain separate. Hardware checks cover deterministic
+restore and reinitialization for GB/GBC/GG/SMS/NES, all six supported NES
+mappers, five GB and NES slots across a reset, and SCUMM save/load for both
+Monkey Island profiles. NES checks also cover installed games, rejected corrupt
+states and the shared pause/zoom/exit flow. Menu enlargement is stored per game in
+`/sd/games.json`. Engine switches/restarts use a clean device reset.
 
 Battery RAM is saved next to the ROM as `.sav`; disconnecting saves and pauses,
 and reconnecting resumes. All cores currently run **without audio**. NES uses
@@ -167,15 +187,15 @@ It supports addresses 0x21, 0x23, 0x25 and 0x27 on the external I2C bus
 from FRANK Quest/Cabal. Choose the game with the D-pad and A, or tap its row.
 It works on the existing Presto firmware, tested at the normal **200 MHz**.
 These are two explicit game profiles, not the general ScummVM launcher.
-Audio and the save/load menu are not enabled.
+Audio remains disabled. Five native SCUMM save slots are available through the shared menu.
 
 The complete 320×200 image defaults to **480×300 nearest-neighbour zoom**,
 centered with black bars. This optional 1.5× mode has uneven pixel sizes but
-no smoothing or cropping. **SELECT / −** switches to exact 1× and back.
+no smoothing or cropping. The shared menu switches to exact 1× and back.
 The D-pad moves the mouse, **A / B** click left/right, **X** skips a cutscene,
-**Y** pauses, **START / +** sends Enter and **X+Y** exits to the desk.
-Touch works without a pad: tap the game to click, the upper-right black corner
-to toggle zoom, or the upper-left black corner to exit.
+**Y** pauses and **START / +** sends Enter. **SELECT + START** opens the menu.
+Touch works without a pad: tap the game to click or the unused upper black
+border to open the same menu.
 
 Monkey Island's `.LFL` and `.LEC` files belong in `/sd/scumm/monkey-vga-de`.
 Monkey Island 2 uses `monkey2.000` and `monkey2.001` in `/sd/scumm/monkey2-de`.

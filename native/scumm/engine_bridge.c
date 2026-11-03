@@ -117,10 +117,16 @@ static mp_obj_t zoom(mp_obj_t value) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(zoom_obj,zoom);
+extern int scumm_engine_state(int op, int slot);
+static mp_obj_t state(mp_obj_t op, mp_obj_t slot) {
+    return mp_obj_new_int(scumm_engine_state(mp_obj_get_int(op), mp_obj_get_int(slot)));
+}
+static MP_DEFINE_CONST_FUN_OBJ_2(state_obj, state);
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self,size_t n_args,size_t n_kw,mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_run,MP_OBJ_FROM_PTR(&run_obj));
     mp_store_global(MP_QSTR_close,MP_OBJ_FROM_PTR(&close_obj));
     mp_store_global(MP_QSTR_zoom,MP_OBJ_FROM_PTR(&zoom_obj));
+    mp_store_global(MP_QSTR_state,MP_OBJ_FROM_PTR(&state_obj));
     MP_DYNRUNTIME_INIT_EXIT
 }

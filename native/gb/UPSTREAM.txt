@@ -1,0 +1,5 @@
+
+Presto shared game menu update: added centered 1x output and versioned full
+state snapshot/restore entry points. GB/GBC snapshots clear all host pointers
+and rebind callbacks on load; SMS/GG use the upstream portable state format.
+Game identity, length and SHA256 validation are handled by game_storage.py.

@@ -6,6 +6,9 @@ import machine
 import os
 import time
 from scumm_files import ReadSession
+from game_controls import MenuChord
+from game_catalog import SCUMM_GAMES, installed_adventures
+from game_storage import exists, recover, replace, zoom_for, store_zoom, stamp
 from gamepad import Gamepad, A, B, X, Y, START, SELECT, LEFT, RIGHT, UP, DOWN
 
 
@@ -13,6 +16,8 @@ class FileSession(ReadSession):
     def __init__(self, save_root='/sd/scumm/saves'):
         super().__init__()
         self.dirs = {}
+        self.writes = {}
+        self.failed_writes = set()
         self.save_root = save_root
 
     def path(self, path):
@@ -30,6 +35,19 @@ class FileSession(ReadSession):
     def __call__(self, op, handle, value):
         if op in (0, 6, 7, 10, 13, 14):
             handle = self.path(handle)
+        if op == 0 and handle.startswith(self.save_root + '/'):
+            handle = recover(handle)
+        if op == 1 and handle in self.writes:
+            path = self.writes.pop(handle)
+            result = super().__call__(op, handle, value)
+            failed = handle in self.failed_writes
+            self.failed_writes.discard(handle)
+            if result == 0 and not failed:
+                try:
+                    replace(path + '.tmp', path)
+                except OSError:
+                    return -1
+            return -1 if failed else result
         if op <= 5:
             return super().__call__(op, handle, value)
         try:
@@ -54,9 +72,10 @@ class FileSession(ReadSession):
                 if not (handle == self.save_root or handle.startswith(self.save_root + '/')):
                     return 0 if op == 10 else 1
                 if op == 10:
-                    stream = open(handle, 'wb')
+                    stream = open(handle + '.tmp', 'wb')
                     key = self.next_handle
                     self.files[key] = (stream, 0)
+                    self.writes[key] = handle
                     self.next_handle += 1
                     return key
                 if op == 13:
@@ -71,12 +90,16 @@ class FileSession(ReadSession):
             if op == 11:
                 stream, size = self.files[handle]
                 written = stream.write(value)
+                if written != len(value):
+                    self.failed_writes.add(handle)
                 self.files[handle] = (stream, max(size, stream.tell()))
                 return written
             if op == 12:
                 self.files[handle][0].flush()
                 return 0
         except (OSError, KeyError):
+            if handle in self.writes:
+                self.failed_writes.add(handle)
             if op in (6, 7, 10):
                 return 0
             if op == 8:
@@ -86,11 +109,13 @@ class FileSession(ReadSession):
 
     def close(self):
         self.dirs.clear()
+        self.writes.clear()
+        self.failed_writes.clear()
         super().close()
 
 
 class Backend:
-    def __init__(self, presto, duration=0, watchdog=None, zoom=True, zoom_fn=None):
+    def __init__(self, presto, duration=0, watchdog=None, zoom=True, zoom_fn=None, path=None, profile=None, state_fn=None):
         self.presto = presto
         self.files = FileSession()
         self.pad = Gamepad()
@@ -108,6 +133,12 @@ class Backend:
         self.quit_sent = False
         self.zoom = zoom
         self.zoom_fn = zoom_fn
+        self.path, self.profile = path, profile
+        self.state_fn = state_fn
+        self.chord = MenuChord()
+        self.ui = None
+        self.menu_action = 'exit'
+        self.touch_menu_held = False
 
     def now(self):
         tick = time.ticks_ms()
@@ -128,14 +159,9 @@ class Backend:
             return None
         self.next_input = time.ticks_add(now, 16)
         held = self.pad.poll(now)
-        if held & (X | Y) == X | Y:
-            if not self.quit_sent:
-                self.quit_sent = True
-                return (10, 0, 0)
-            return None
-        if held & SELECT and not self.buttons & SELECT and self.zoom_fn:
-            self.zoom = not self.zoom
-            self.zoom_fn(self.zoom)
+        held, show_menu = self.chord.poll(held, now)
+        if show_menu and self.path:
+            return self.pause_menu()
         old_x, old_y = self.x, self.y
         self.x = max(0, min(319, self.x + 3 * (bool(held & RIGHT) - bool(held & LEFT))))
         self.y = max(0, min(199, self.y + 3 * (bool(held & DOWN) - bool(held & UP))))
@@ -143,14 +169,9 @@ class Backend:
         touch.poll()
         first_touch = touch.state and not self.touch_down
         self.touch_down = bool(touch.state)
-        # Controls live in the unused upper border, never over game content.
-        if first_touch and touch.y < 64:
-            if touch.x < 64 and not self.quit_sent:
-                self.quit_sent = True
-                return (10, 0, 0)
-            if touch.x >= 416 and self.zoom_fn:
-                self.zoom = not self.zoom
-                self.zoom_fn(self.zoom)
+        # Touch equivalent for the same menu: unused top border.
+        if first_touch and touch.y < 64 and self.path:
+            return self.pause_menu()
         left, top = (0, 90) if self.zoom else (80, 140)
         width, height = (480, 300) if self.zoom else (320, 200)
         touching = touch.state and left <= touch.x < left+width and top <= touch.y < top+height
@@ -170,6 +191,38 @@ class Backend:
             if bool(held & mask) != bool(self.buttons & mask):
                 self.events.append((1 if held & mask else 2, key, key if key < 128 else 0))
         self.buttons, self.touching = held, touching
+        return self.events.pop(0) if self.events else None
+
+    def pause_menu(self):
+        from game_ui import GameUI
+        if self.ui is None:
+            self.ui = GameUI(self.presto, self.pad, self.watchdog.feed if self.watchdog else None)
+        slots = ScummSlots(self.state_fn, self.profile)
+        picture = bytearray(memoryview(self.presto.display))
+        def set_zoom(value):
+            store_zoom(self.path, value)
+            if self.zoom_fn:
+                self.zoom_fn(value)
+        try:
+            action, self.zoom = self.ui.pause('Monkey Island' + (' 2' if self.profile == 2 else ''),
+                                               self.zoom, slots, set_zoom)
+        finally:
+            memoryview(self.presto.display)[:] = picture
+            del picture
+            self.presto.update()
+            self.last_tick = time.ticks_ms()  # pause does not advance the engine clock
+            self.next_input = self.last_tick
+        # Release game inputs held when the menu opened; no stuck mouse/key.
+        if self.buttons & A or self.touching: self.events.append((5,self.x,self.y))
+        if self.buttons & B: self.events.append((7,self.x,self.y))
+        for mask,key in ((X,27),(Y,32),(START,13)):
+            if self.buttons & mask: self.events.append((2,key,key))
+        self.buttons = 0
+        self.touching = self.touch_down = False
+        if action in ('restart','exit'):
+            self.menu_action = action
+            self.quit_sent = True
+            self.events.append((10,0,0))
         return self.events.pop(0) if self.events else None
 
     def __call__(self, op, a, b):
@@ -196,23 +249,39 @@ class Backend:
         raise ValueError('Unsupported SCUMM callback')
 
 
-GAMES = (
-    (2, 'Monkey Island 2', '/sd/scumm/monkey2-de', ('monkey2.000', 'monkey2.001')),
-    (1, 'Monkey Island', '/sd/scumm/monkey-vga-de',
-     ('000.lfl', 'disk01.lec', 'disk02.lec', 'disk03.lec', 'disk04.lec')),
-)
+GAMES = SCUMM_GAMES
+installed_games = installed_adventures
 
 
-def installed_games():
-    found = []
-    for game in GAMES:
-        try:
-            for name in game[3]:
-                os.stat(game[2] + '/' + name)
-            found.append(game)
-        except OSError:
-            pass
-    return found
+class ScummSlots:
+    def __init__(self, state_fn, profile):
+        self.state_fn = state_fn
+        self.prefix = '/sd/scumm/saves/presto-' + ('monkey-vga-de' if profile == 1 else 'monkey2-de')
+
+    def path(self, slot):
+        if not 1 <= slot <= 5: raise ValueError('Ungueltiger Speicherplatz')
+        return self.prefix + '.s%02d' % slot
+
+    def capabilities(self):
+        bits = self.state_fn(0,0) if self.state_fn else 0
+        return bool(bits & 1), bool(bits & 2)
+
+    def info(self, slot):
+        path = recover(self.path(slot))
+        if not exists(path): return None
+        from tz import localtime
+        import time
+        t = time.localtime(os.stat(path)[8])
+        return '%02d.%02d.%04d %02d:%02d UTC' % (t[2],t[1],t[0],t[3],t[4]) if t[0] >= 2024 else 'Gespeichert'
+
+    def save(self, slot):
+        if not self.state_fn or self.state_fn(1,slot) != 1:
+            raise ValueError('Speichern hier nicht moeglich')
+
+    def load(self, slot):
+        if not exists(recover(self.path(slot))): raise ValueError('Speicherplatz leer')
+        if not self.state_fn or self.state_fn(2,slot) != 1:
+            raise ValueError('Laden hier nicht moeglich')
 
 
 def choose_game(path=None, profile=None):
@@ -325,10 +394,17 @@ def run(path=None, duration=0, profile=None):
     gc.collect()
     print('SCUMM heap before arena:', gc.mem_free())
     arena = bytearray(4 * 1024 * 1024)
-    backend = Backend(presto, duration, machine.WDT(timeout=8000), zoom_fn=scummcore.zoom)
+    zoom = zoom_for(path)
+    scummcore.zoom(zoom)
+    backend = Backend(presto, duration, machine.WDT(timeout=8000), zoom=zoom,
+                      zoom_fn=scummcore.zoom, path=path, profile=profile, state_fn=getattr(scummcore, 'state', None))
     try:
         result = scummcore.run(arena, backend, memoryview(presto.display), path, profile)
         print('SCUMM result:', result, 'frames:', backend.frames, 'ms:', backend.elapsed)
+        if not duration:
+            from game_launch import queue
+            queue('scumm.py' if backend.menu_action == 'restart' else 'games.py',
+                  dict(path=path, profile=profile, system='SCUMM'))
         return result
     finally:
         backend.files.close()

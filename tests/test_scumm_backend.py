@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -26,7 +27,7 @@ pad_module = SimpleNamespace(Gamepad=Pad, A=1, B=2, START=8, SELECT=4,
                             RIGHT=16, LEFT=32, UP=64, DOWN=128, X=256, Y=512)
 files = load('scumm_files_test', ROOT/'device/lib/scumm_files.py')
 with patch.dict('sys.modules', {'machine': SimpleNamespace(), 'gamepad': pad_module,
-                               'scumm_files': files}):
+                               'scumm_files': files}), patch.object(sys, 'path', [str(ROOT/'device/lib')]+sys.path):
     backend_module = load('scumm_backend_test', ROOT/'device/lib/scumm_backend.py')
 
 
@@ -100,21 +101,25 @@ class InputTests(unittest.TestCase):
             ticks_diff=lambda a,b: ((a-b+(1<<29)) % (1<<30))-(1<<29))
         self.clock_patch = patch.object(backend_module, 'time', self.clock)
         self.clock_patch.start()
+        control_patch=patch.dict(backend_module.MenuChord.poll.__globals__, {'time':self.clock})
+        control_patch.start()
+        self.addCleanup(control_patch.stop)
         self.addCleanup(self.clock_patch.stop)
         self.touch = SimpleNamespace(state=False, x=0, y=0, poll=lambda: None)
         self.backend = backend_module.Backend(SimpleNamespace(touch=self.touch), zoom=False)
 
-    def test_zoom_touch_coordinates_and_toggle(self):
+    def test_zoom_touch_coordinates_without_select_toggle(self):
         changed=[]
         self.backend.zoom_fn=changed.append
         self.backend.pad.buttons=4
+        self.backend.zoom=True
         self.touch.state,self.touch.x,self.touch.y=True,479,389
         self.assertEqual(self.backend.event(),(3,319,199))
-        self.assertEqual(changed,[True])
+        self.assertEqual(changed,[])
         self.assertEqual(self.backend.event(),(4,319,199))
         self.tick=20
         self.assertIsNone(self.backend.event())
-        self.assertEqual(changed,[True])
+        self.assertEqual(changed,[])
 
     def test_touch_maps_to_game_and_releases_outside(self):
         self.touch.state, self.touch.x, self.touch.y = True, 100, 170
@@ -124,38 +129,44 @@ class InputTests(unittest.TestCase):
         self.touch.x = 10
         self.assertEqual(self.backend.event(), (5, 20, 30))
 
-    def test_pad_disconnect_releases_click_and_exit_chord_has_no_extra_keys(self):
+    def test_pad_disconnect_releases_click_and_menu_chord_has_no_extra_keys(self):
         self.backend.pad.buttons = 1
         self.assertEqual(self.backend.event(), (4, 160, 100))
         self.tick = 20
         self.backend.pad.buttons = 0
         self.assertEqual(self.backend.event(), (5, 160, 100))
         self.tick = 40
-        self.backend.pad.buttons = 256 | 512
-        self.assertEqual(self.backend.event(), (10, 0, 0))
+        self.backend.path = '/game'
+        menus=[]
+        self.backend.pause_menu=lambda:menus.append(True)
+        self.backend.pad.buttons = 4 | 8
+        self.assertIsNone(self.backend.event())
         self.tick = 60
         self.assertIsNone(self.backend.event())
+        self.assertEqual(menus,[True])
         self.assertFalse(self.backend.events)
+
+    def test_old_xy_chord_is_only_individual_scumm_keys(self):
+        self.backend.pad.buttons = 256 | 512
+        self.assertEqual(self.backend.event(), (1,27,27))
+        self.assertEqual(self.backend.event(), (1,32,32))
+        self.assertFalse(self.backend.quit_sent)
 
     def test_wrapping_clock(self):
         self.backend.last_tick = (1<<30)-5
         self.tick = 7
         self.assertEqual(self.backend.now(), 12)
 
-    def test_border_controls_are_press_edges(self):
-        changed=[]
-        self.backend.zoom_fn=changed.append
+    def test_border_opens_same_menu_only_on_press_edge(self):
+        menus=[]
+        self.backend.path='/game'
+        self.backend.pause_menu=lambda:menus.append(True)
         self.touch.state,self.touch.x,self.touch.y=True,450,20
         self.assertIsNone(self.backend.event())
         self.tick=20
         self.assertIsNone(self.backend.event())
-        self.assertEqual(changed,[True])
-        self.touch.state=False
-        self.tick=40
-        self.backend.event()
-        self.touch.state,self.touch.x=True,20
-        self.tick=60
-        self.assertEqual(self.backend.event(),(10,0,0))
+        self.assertEqual(menus,[True])
+
 
 
 class MenuTests(unittest.TestCase):

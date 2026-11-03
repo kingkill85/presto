@@ -189,5 +189,6 @@ images. Native scanline/output scratch buffers live on the stack for frame()
 only; no stack pointer may survive the call.
 Handhelds use 3x integer scaling (480x432); NES/SMS default to 2x with eight
 source pixels cropped per side. Y toggles the complete centered 1x image. All use
-direct framebuffer writes. Pad disconnect saves and pauses; X+Y exits.
+direct framebuffer writes. Pad disconnect saves and pauses; SELECT+START opens the shared game menu.
+Only games.py is visible; virtual folders route gb.py/scumm.py after reset.
 The desk remains touch-controlled without a pad. ROMs and saves stay out of git.

@@ -83,3 +83,8 @@ Current supported profiles (supersedes the earlier demo target above):
   SHA256 b043d9dcc8510e3565bb0152f7e35e686514837e97275aa08d3ca1fcd0924ccd.
 - Atlantis profile 0 and the demo downloader were removed at the user's request.
   The two-game menu supports touch and the existing Qw/ST Pad.
+
+Shared menu update: exports state(op,slot), querying save/load availability and
+requesting engine-native slots 1-5. Requests are applied by the normal SCUMM loop
+after the Python menu returns. Generic ScummVM GUI remains disabled. Save-file
+writes now stage and replace atomically through the Python filesystem bridge.

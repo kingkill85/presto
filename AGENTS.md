@@ -54,18 +54,28 @@ features and setup, and `CLAUDE.md` for further architectural context.
 - `device/sdcard.py` must stay in the root: the frozen, broken built-in
   driver takes precedence over `/lib`. Our driver mounts cards at `/sd`.
 - `herdr-plugin/` contains host-side Python scripts and the Herdr manifest.
-- `device/gb.py` is the thin entry point for the shared Retro console in
+- `device/games.py` is the only visible game app. `game_catalog.py` discovers
+  virtual system folders without loading cores. `game_ui.py` provides the shared
+  touch/pad menu; `game_launch.py` routes internal runtimes via RAMFS/reset.
+  Five checked state slots are provided by `game_storage.py`; never substitute
+  battery RAM for full states. NES states include CPU/PPU, mapper registers,
+  pending interrupts, RAM and active decoded CHR banks. Serialize bank offsets,
+  never native pointers; validate before mutation and invalidate unused caches
+  on restore. Bump the state version/core ID when changing its layout.
+- `device/gb.py` is the internal thin entry point for the shared Retro console in
   `device/lib/retro.py`; `retro_roms.py` discovers and selects GB/GBC/GG/NES/SMS.
   ROMs are under `/roms` or `/sd/roms`, recursively; saves sit next to the ROM.
   Load only the selected native module after choosing a game. A `.gb` ROM's
   CGB flag can select the color core regardless of its extension.
 - The console requires a pad, saves and pauses on disconnect, and resumes on
   reconnect. The desk keeps working by touch. Preserve the no-pad waiting
-  screen and X+Y save/exit chord. No overlays during gameplay.
+  screen. SELECT+START opens the shared game menu; X+Y has no special meaning.
+  Consume the chord before game input; wait for release when closing menus.
 - GB/GBC/GG use exact 3× scaling to 480×432 centered in 480×480, with 24px
-  black bars. NES/SMS default to 2× with eight source pixels cropped per side; Y toggles
-  the full 1× image. The sixth frame argument is 1/2 for these cores. Keep
-  X+Y exit from also toggling scale. Do not introduce noninteger stretching.
+  black bars; the menu can select centered 1× instead. NES/SMS default to 2×
+  with eight source pixels cropped per side. GB/GBC frame scale is 1=3×,
+  2=centered 1× (0 retains the diagnostic 240px API); SMS/GG/NES use 2=large,
+  1=centered 1×. Do not introduce noninteger stretching into Retro.
   Use `Presto(..., full_res=True, direct_to_fb=True)` to avoid display copies.
   Write 32-bit output rows sequentially, not interleaved halfword stores.
   Compose ROM menus/messages in a separate PicoGraphics buffer, then present

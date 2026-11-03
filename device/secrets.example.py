@@ -2,7 +2,5 @@
 WIFI_SSID = ""
 WIFI_PASSWORD = ""
 
-IMMICH_URL = ""  # e.g. "https://immich.example.org"
-IMMICH_KEY = ""  # needs asset.read, asset.view and asset.download
 
 HA_TOKEN = ""  # Home Assistant long-lived access token (Profile > Security)

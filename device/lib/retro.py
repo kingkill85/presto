@@ -6,10 +6,13 @@ import os
 import time
 
 from retro_clock import EmulationClock
-from retro_roms import SYSTEMS, discover, extension, load_core, system_for
-from gamepad import A, B, DOWN, START, UP, X, Y, Gamepad
+from retro_roms import extension, load_core, system_for
+from gamepad import Gamepad
+from game_controls import MenuChord
+from game_ui import GameUI
+from game_storage import StateSlots, zoom_for, store_zoom
+from game_launch import launch, take_request
 from presto import Presto
-from picographics import PicoGraphics, DISPLAY_PRESTO_FULL_RES, PEN_RGB565
 
 presto = Presto(ambient_light=False, full_res=True, layers=1, direct_to_fb=True)
 display = presto.display
@@ -17,16 +20,10 @@ touch = presto.touch
 W, H = display.get_bounds()
 fb = memoryview(display)
 pad = Gamepad()
-menu_display = None
+ui = GameUI(presto, pad)
 
-FRAME_US = 16742  # 59.73 Hz
 SAVE_EVERY_MS = 30000
 SHADES = [display.create_pen(*rgb) for rgb in ((155, 188, 15), (139, 172, 15), (48, 98, 48), (15, 56, 15))]
-BG = display.create_pen(40, 40, 52)
-FRAME = display.create_pen(20, 20, 28)
-BUTTON = display.create_pen(150, 30, 70)
-LABEL = display.create_pen(200, 200, 210)
-DIM = display.create_pen(110, 110, 125)
 BLACK = display.create_pen(0, 0, 0)
 
 
@@ -40,45 +37,21 @@ def mount_sd():
         pass
 
 
-def find_roms():
-    return discover()
-
-
-def menu_buffer():
-    global menu_display
-    if menu_display is None:
-        menu_display = PicoGraphics(DISPLAY_PRESTO_FULL_RES, pen_type=PEN_RGB565, layers=1)
-    return menu_display
-
-
-def show_menu(surface):
-    # Copy a completed menu image; never clear the live scanout while composing.
-    presto.presto.update(surface)
-
-
 def message(text, detail=""):
-    display = menu_buffer()
-    display.set_pen(BG)
-    display.clear()
-    display.set_pen(LABEL)
-    display.text(text, 20, H // 2 - 30, W - 40, 3)
-    display.set_pen(DIM)
-    display.text(detail, 20, H // 2 + 15, W - 40, 2)
-    show_menu(display)
+    ui.draw(text.upper(), [], 0, detail)
 
 
 def back_on_touch():
-    """Allow leaving a waiting screen even when there is no gamepad."""
     touch.poll()
     if touch.state:
-        machine.reset()
+        launch()
 
 
 def wait_for_pad():
     pad.poll()
     if pad.connected:
         return
-    message("Gamepad anschliessen", "Tippen: zurueck")
+    message("Gamepad anschliessen", "Tippen: zur Spiele-Auswahl")
     while not pad.connected:
         back_on_touch()
         time.sleep_ms(20)
@@ -86,49 +59,7 @@ def wait_for_pad():
 
 
 def short_name(path):
-    name = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    return name.split(" (")[0]
-
-
-def draw_roms(roms, selected, offset):
-    display = menu_buffer()
-    display.set_pen(BG)
-    display.clear()
-    display.set_pen(LABEL)
-    display.text("RETRO", 20, 16, -1, 3)
-    for i, path in enumerate(roms[offset:offset + 9]):
-        display.set_pen(BUTTON if offset + i == selected else FRAME)
-        display.rectangle(12, 64 + i * 44, W - 24, 40)
-        display.set_pen(LABEL)
-        label = SYSTEMS[extension(path)][0]
-        display.text(label, 24, 76 + i * 44, -1, 2)
-        display.text(short_name(path)[:27], 100, 76 + i * 44, -1, 2)
-    show_menu(display)
-
-
-def choose(roms):
-    selected = 0
-    shown = None
-    while True:
-        pad.poll()
-        if not pad.connected:
-            wait_for_pad()
-            shown = None
-            continue
-        if pad.pressed & (B | X):
-            machine.reset()
-        if pad.actions & UP:
-            selected = (selected - 1) % len(roms)
-        elif pad.actions & DOWN:
-            selected = (selected + 1) % len(roms)
-        offset = selected // 9 * 9
-        if selected != shown:
-            draw_roms(roms, selected, offset)
-            shown = selected
-        if pad.pressed & (A | START):
-            return roms[selected]
-        back_on_touch()
-        time.sleep_ms(20)
+    return path.rsplit("/", 1)[-1].rsplit(".", 1)[0].split(" (")[0]
 
 
 def save(ram, path):
@@ -181,7 +112,11 @@ def run(path):
     gbcore.palette(*SHADES)
     save_needed = getattr(gbcore, 'save_needed', None)
     zoomable = extension(path) in ('.nes', '.sms')
-    scale = 2 if zoomable else True
+    zoom = zoom_for(path)
+    handheld = system_for(path)[0] in ('GB', 'GBC')
+    scale = (1 if zoom else 2) if handheld else (2 if zoom else 1)
+    slots = StateSlots(path, gbcore, rom)
+    chord = MenuChord()
     # CPU/video timing always advances at the console's original frame rate.
     # NES/SMS draw at most every other frame (~30Hz). If drawing overruns
     # the deadline, run CPU-only frames until caught up, preserving game speed.
@@ -192,7 +127,6 @@ def run(path):
     clock = EmulationClock()
     try:
         clock.resume()
-        exit_since = None
         next_t = time.ticks_us()
         skip = False
         last_save = time.ticks_ms()
@@ -207,26 +141,34 @@ def run(path):
                 clear_game()
                 next_t = time.ticks_us()
                 last_save = time.ticks_ms()
-                skip, exit_since = False, None
+                skip = False
                 frame_no = 0
                 next_draw = 0
                 continue
-            if (held & (X | Y)) == (X | Y):
-                if exit_since is None:
-                    exit_since = now
-                elif time.ticks_diff(now, exit_since) >= 1000:
-                    clock.pause()
+            held, menu = chord.poll(held, now)
+            if menu:
+                clock.pause()
+                picture = bytearray(fb)
+                try:
+                    action, zoom = ui.pause(short_name(path), zoom, slots,
+                                             lambda value: store_zoom(path, value))
+                finally:
+                    fb[:] = picture
+                    del picture
+                    presto.update()
+                scale = (1 if zoom else 2) if handheld else (2 if zoom else 1)
+                if action in ('restart', 'exit'):
                     save(ram, sav)
-                    machine.reset()
-            else:
-                exit_since = None
-            if zoomable and pad.pressed & Y and not held & X:
-                scale = 3 - scale
+                    request = dict(path=path, system=system_for(path)[0])
+                    launch('gb.py' if action == 'restart' else 'games.py', request)
+                    return
                 clear_game()
-                skip = False
+                clock.resume()
                 next_t = time.ticks_us()
-                frame_no = 0
-                next_draw = 0
+                skip = False
+                frame_no = next_draw = 0
+                last_save = time.ticks_ms()
+                continue
             draw = not skip and frame_no >= next_draw
             if draw:
                 next_draw = frame_no + render_every
@@ -257,28 +199,14 @@ def run(path):
 
 
 def main():
-    wait_for_pad()
     mount_sd()
-    roms = find_roms()
-    if not roms:
-        message("Keine ROMs", ".gb .gbc .gg .nes .sms nach /sd/roms")
-        while True:
-            pad.poll()
-            back_on_touch()
-            if pad.pressed:
-                machine.reset()
-            time.sleep_ms(50)
-    while True:
-        path = choose(roms)
-        try:
-            run(path)
-        except (ImportError, ValueError, OSError, MemoryError) as error:
-            message("Start nicht moeglich", str(error))
-            # Give the player time to read it and release the launch button.
-            time.sleep_ms(500)
-            while True:
-                pad.poll()
-                back_on_touch()
-                if pad.pressed & (A | B | X):
-                    machine.reset()  # release all native state before another core
-                time.sleep_ms(20)
+    request = take_request()
+    path = request.get('path')
+    if not path:
+        launch()
+        return
+    try:
+        run(path)
+    except (ImportError, ValueError, OSError, MemoryError) as error:
+        ui.notice('START NICHT MOEGLICH', str(error))
+        launch('games.py', request)

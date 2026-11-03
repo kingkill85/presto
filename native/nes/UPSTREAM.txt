@@ -37,3 +37,12 @@ The earlier Agnes candidate was replaced after measuring only ~13 FPS.
   the warmed cache decodes none. Framebuffer CRCs at frames 60/120 match.
 Reference: https://www.nesdev.org/wiki/Programming_MMC3
 SMB3 disassembly: https://github.com/captainsouthbird/smb3
+
+- Add versioned state_size/save_state/load_state APIs (presto-nes-v1). States
+  include CPU/PPU/controller timing, RAM, MMC1 serial writes and MMC3 IRQs.
+  ROM identity uses FNV-1a inside the core and SHA256 in the slot wrapper.
+  Bank pointers are stored as checked offsets. Preserve active decoded CHR
+  pixels and dirty flags, remap them on restore and invalidate unused caches.
+  Validate the complete header and bank ranges before mutating the live core.
+  Hardware fixtures cover mappers 0/1/2/3/4/7, CHR-ROM/RAM, deterministic
+  replay, corrupt states, wrong ROMs and five slots across a device reset.

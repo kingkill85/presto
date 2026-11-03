@@ -89,7 +89,7 @@ def main():
              'printf','puts','fflush','exit','_exit','remove','abort']
     core = build/'core.o'
     subprocess.run([cross+'ld','-r','--gc-sections','-u','scumm_engine_run',
-                    '-u','cabal_update_screen',
+                    '-u','cabal_update_screen','-u','scumm_engine_state',
                     *[arg for name in ('create_mspace_with_base','destroy_mspace','mspace_malloc',
                         'mspace_calloc','mspace_realloc','mspace_free') for arg in ('-u',name)],
                     '-o',str(core),

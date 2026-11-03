@@ -19,9 +19,9 @@ if CPU_MHZ is not None:
             super().__init__()
             self.target=CPU_MHZ * 1000000
     retro.EmulationClock=BenchmarkClock
-from retro_roms import load_core
+from retro_roms import load_core, discover
 retro.mount_sd()
-path=next(p for p in retro.find_roms() if MATCH in p)
+path=next(p for p in discover() if MATCH in p)
 core=None
 frames=drawn=0
 started=last_draw=None

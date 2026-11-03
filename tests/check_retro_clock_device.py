@@ -35,7 +35,7 @@ try:
         start = time.ticks_us()
         for frame in range(360):
             if frame % 16 == 0: watchdog.feed()
-            assert not core.frame(fb,0,0,0,frame % 2 == 0,2 if KIND in ('NES','SMS') else True)
+            assert not core.frame(fb,0,0,0,frame % 2 == 0,2 if KIND in ('NES','SMS','GG') else 1)
             if frame % 2 == 0: presto.update()
         elapsed = time.ticks_diff(time.ticks_us(),start)
         checksum = binascii.crc32(fb)

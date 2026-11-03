@@ -84,8 +84,14 @@ static mp_obj_t frame(size_t n, const mp_obj_t *args) {
 static void retro_sms_line(int y) {
     uint32_t sega_line[240];
     if (SMS_is_system_type_gg(&sega)) {
-        if (y >= 24 && y < 168)
-            retro_line3(sega_framebuffer, y - 24, sega_pixels + 48, sega_line);
+        if (y >= 24 && y < 168) {
+            if (sega_scale == 2) retro_line3(sega_framebuffer, y - 24, sega_pixels + 48, sega_line);
+            else {
+                uint32_t *to = (uint32_t *)(sega_framebuffer + (168 + y - 24) * 480 + 160);
+                for (int x = 0; x < 80; x++)
+                    to[x] = sega_pixels[48+x*2] | ((uint32_t)sega_pixels[49+x*2] << 16);
+            }
+        }
         return;
     }
     int x, start, w, h;
@@ -100,6 +106,21 @@ static void retro_sms_line(int y) {
     }
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(frame_obj, 6, 6, frame);
+static mp_obj_t state_size(void) { return mp_obj_new_int(SMS_get_state_size(&sega, NULL)); }
+static MP_DEFINE_CONST_FUN_OBJ_0(state_size_obj, state_size);
+static mp_obj_t save_state(mp_obj_t obj) {
+    mp_buffer_info_t b; mp_get_buffer_raise(obj, &b, MP_BUFFER_WRITE);
+    if (!SMS_savestate(&sega, b.buf, b.len, NULL)) mp_raise_ValueError(MP_ERROR_TEXT("Sega: save state failed"));
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(save_state_obj, save_state);
+static mp_obj_t load_state(mp_obj_t obj) {
+    mp_buffer_info_t b; mp_get_buffer_raise(obj, &b, MP_BUFFER_READ);
+    if (!SMS_loadstate(&sega, b.buf, b.len, NULL)) mp_raise_ValueError(MP_ERROR_TEXT("Sega: load state failed"));
+    SMS_skip_audio(&sega, true);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(load_state_obj, load_state);
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_init, MP_OBJ_FROM_PTR(&init_obj));
@@ -108,5 +129,9 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_save_needed, MP_OBJ_FROM_PTR(&save_needed_obj));
     mp_store_global(MP_QSTR_palette, MP_OBJ_FROM_PTR(&palette_obj));
     mp_store_global(MP_QSTR_frame, MP_OBJ_FROM_PTR(&frame_obj));
+    mp_store_global(MP_QSTR_state_size, MP_OBJ_FROM_PTR(&state_size_obj));
+    mp_store_global(MP_QSTR_save_state, MP_OBJ_FROM_PTR(&save_state_obj));
+    mp_store_global(MP_QSTR_load_state, MP_OBJ_FROM_PTR(&load_state_obj));
+    mp_store_global(MP_QSTR_state_id, mp_obj_new_str("presto-sms-v1", sizeof("presto-sms-v1")-1));
     MP_DYNRUNTIME_INIT_EXIT
 }

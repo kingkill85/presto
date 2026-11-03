@@ -74,3 +74,82 @@ def sega_rom(gg=False):
     rom[0x7ff0:0x7ff8] = b'TMR SEGA'
     rom[0x7fff] = 0x6c if gg else 0x4c
     return rom
+
+
+def nes_mapper_rom(mapper, chr_ram=None):
+    """Original NES program: NMI-driven banking, MMC3 IRQ and CHR-RAM writes.
+
+    Code/vectors are repeated in every 8K PRG bank so mapper writes can select
+    real banks without changing the test program. No third-party ROM bytes.
+    """
+    if mapper not in (0, 1, 2, 3, 4, 7):
+        raise ValueError('Unsupported fixture mapper')
+    if chr_ram is None:
+        chr_ram = mapper in (1, 2, 7)
+    if chr_ram and mapper in (3, 4):
+        raise ValueError('Unsupported CHR-RAM mapping')
+    prg_size, chr_size = 65536, 0 if chr_ram else 32768
+    rom = bytearray(16 + prg_size + chr_size)
+    rom[:4] = b'NES\x1a'
+    rom[4:8] = bytes((4, chr_size//8192, (mapper << 4) | 2, 0))
+    code = bytearray(b'\x78\xd8\xa2\xff\x9a\xa9\x00\x85\x00\x85\x01\x85\x02')
+
+    def write(buf, addr, value):
+        buf.extend(bytes((0xa9, value, 0x8d, addr & 255, addr >> 8)))
+
+    write(code, 0x2000, 0)
+    write(code, 0x2001, 0)
+    write(code, 0x4017, 0x40)
+    write(code, 0x2006, 0x3f)
+    write(code, 0x2006, 0)
+    for value in (0x0f, 0x30, 0x16, 0x1a): write(code, 0x2007, value)
+    if chr_ram:
+        write(code, 0x2006, 0)
+        write(code, 0x2006, 0)
+        for value in (0xaa,)*8+(0,)*8: write(code, 0x2007, value)
+    write(code, 0x2005, 0)
+    write(code, 0x2005, 0)
+    write(code, 0x2006, 0)
+    write(code, 0x2006, 0)
+    write(code, 0x2000, 0x80)
+    write(code, 0x2001, 0x0a)
+    code.append(0x58)  # CLI, allow mapper IRQ
+    loop = 0xe000 + len(code)
+    code.extend(bytes((0xe6, 2, 0x4c, loop & 255, loop >> 8)))
+    assert len(code) < 0x200
+
+    nmi = bytearray(b'\x48\x8a\x48\x98\x48\xe6\x00\xa5\x00\x8d\x00\x60')
+    # Exercise serial joypad latch/shift state as well as RAM/SRAM.
+    write(nmi, 0x4016, 1); write(nmi, 0x4016, 0)
+    nmi.extend(b'\xad\x16\x40\x85\x03')
+    if mapper == 1:
+        # One bit per frame intentionally leaves partial MMC1 transactions.
+        nmi.extend(b'\xa5\x00\x29\x01\x8d\x00\xe0')
+    elif mapper in (2, 3):
+        nmi.extend(b'\xa5\x00\x29\x03\x8d\x00\x80')
+    elif mapper == 4:
+        nmi.extend(b'\xa5\x00\x29\x07\x8d\x00\x80')
+        nmi.extend(b'\xa5\x00\x29\x0f\x8d\x01\x80')
+        nmi.extend(b'\xa5\x00\x29\x01\x8d\x00\xa0')
+        write(nmi, 0xc000, 127);write(nmi, 0xc001, 0);write(nmi, 0xe001, 0)
+    elif mapper == 7:
+        nmi.extend(b'\xa5\x00\x29\x11\x8d\x00\x80')
+    if chr_ram:
+        write(nmi, 0x2006, 0);write(nmi, 0x2006, 0)
+        nmi.extend(b'\xa5\x00\x8d\x07\x20')
+        write(nmi, 0x2006, 0);write(nmi, 0x2006, 0)
+    nmi.extend(b'\x68\xa8\x68\xaa\x68\x40')
+    irq = b'\x48\xa9\x00\x8d\x00\xe0\xe6\x01\x68\x40'
+    assert len(nmi) < 0x100
+    for bank in range(8):
+        base = 16+bank*8192
+        rom[base:base+len(code)] = code
+        rom[base+0x200:base+0x200+len(nmi)] = nmi
+        rom[base+0x300:base+0x300+len(irq)] = irq
+        rom[base+0x1ffa:base+0x2000] = b'\x00\xe2\x00\xe0\x00\xe3'
+    for bank in range(chr_size//1024):
+        base = 16+prg_size+bank*1024
+        for row in range(8):
+            rom[base+row] = (0xaa,0xcc,0xf0,0x81)[bank%4]
+            rom[base+row+8] = (0,0x33,0x0f,0x42)[bank%4]
+    return rom

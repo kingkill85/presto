@@ -230,12 +230,22 @@ class EmulatorInputTests(unittest.TestCase):
                    gbcore=SimpleNamespace(init=lambda rom: 0, palette=lambda *args: None, frame=frame),
                    message=lambda *args: None, short_name=lambda path: path,
                    wait_for_pad=lambda: None, clear_game=lambda: None,
-                   presto=SimpleNamespace(update=lambda: None), SHADES=(0, 1, 2, 3), fb=None,
+                   presto=SimpleNamespace(update=lambda: None), SHADES=(0, 1, 2, 3), fb=bytearray(4),
                    hold_b=False, X=256, Y=512, JOYPAD_B=2, GX=4, GY=2,
                    X_X=208, X_Y=4, FRAME_US=16742, SAVE_EVERY_MS=30000,
                    fingers=lambda: ((10, 180),) if touch_keys else (),
                    keys_at=lambda x, y: touch_keys, toggle_at=lambda x, y: False,
                    save=checked_save, frame_modes=[], frame_draws=[])
+        spec = importlib.util.spec_from_file_location('controls_test', ROOT/'device/lib/game_controls.py')
+        controls = importlib.util.module_from_spec(spec)
+        with patch.dict('sys.modules', {'time': clock, 'gamepad': SimpleNamespace(SELECT=4, START=8)}):
+            spec.loader.exec_module(controls)
+        env.update(MenuChord=controls.MenuChord, zoom_for=lambda path:True,
+                   store_zoom=lambda path,value:None,
+                   StateSlots=lambda *args:None,
+                   system_for=lambda path: ('GB' if path.endswith('.gb') else 'NES',),
+                   ui=SimpleNamespace(pause=lambda *args:('exit',True)),
+                   launch=lambda *args:reset())
         env['extension'] = lambda p: '.' + p.rsplit('.', 1)[-1].lower()
         env['read_rom'] = lambda p: b'rom'
         env['load_core'] = lambda p: (env['gbcore'], 16742)
@@ -248,9 +258,9 @@ class EmulatorInputTests(unittest.TestCase):
             with self.assertRaises(StopFrames):
                 env['run']('test.gb')
         self.assertEqual(frames, [1 | 16, 0, 2])
-        self.assertTrue(all(mode is True for mode in env['frame_modes']))
+        self.assertTrue(all(mode == 1 for mode in env['frame_modes']))
 
-    def test_nes_defaults_large_and_y_toggles_integer_scale(self):
+    def test_nes_defaults_large_and_y_no_longer_toggles_scale(self):
         env, frames, _ = self.environment([0, 0, 0])
         def poll(now=None):
             pressed = 512 if len(frames) in (0, 2) else 0
@@ -259,12 +269,12 @@ class EmulatorInputTests(unittest.TestCase):
         env['pad'].poll = poll
         with self.assertRaises(StopFrames):
             env['run']('test.nes')
-        self.assertEqual(env['frame_modes'], [1, 1, 2])
+        self.assertEqual(env['frame_modes'], [2, 2, 2])
 
-    def test_exit_chord_does_not_toggle_zoom(self):
+    def test_old_xy_chord_does_not_exit_or_toggle_zoom(self):
         env, frames, _ = self.environment([256 | 512] * 80)
         env['pad'].pressed = 256 | 512
-        with self.assertRaises(Reset):
+        with self.assertRaises(StopFrames):
             env['run']('test.nes')
         self.assertTrue(all(mode == 2 for mode in env['frame_modes']))
 
@@ -279,7 +289,7 @@ class EmulatorInputTests(unittest.TestCase):
 
     def test_slow_rendering_skips_more_images_to_keep_game_speed(self):
         for suffix in ('.nes', '.sms'):
-            inputs = [i & 255 for i in range(96)]
+            inputs = [i & 0xf3 for i in range(96)]
             env, frames, _ = self.environment(inputs,
                 frame_ms=lambda draw: 30 if draw else 5)
             env['gbcore'].init = lambda *args: 0
@@ -344,14 +354,14 @@ class EmulatorInputTests(unittest.TestCase):
             env['run']('test.gb')
         self.assertEqual(env['cpu_hz'][0], 200000000)
 
-    def test_exit_chord_saves_before_reset(self):
-        env, frames, saves = self.environment([256 | 512] * 80)
+    def test_select_start_menu_exit_saves_before_reset(self):
+        env, frames, saves = self.environment([4 | 8] * 80)
         with patch('builtins.open', mock_open(read_data=b'rom')):
             with self.assertRaises(Reset):
                 env['run']('test.gb')
         self.assertEqual(saves, ['test.sav'])
         self.assertTrue(all(keys == 0 for keys in frames))
-        self.assertEqual(len(frames), 50)
+        self.assertEqual(len(frames), 0)
 
 
 if __name__ == '__main__':

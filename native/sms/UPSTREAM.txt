@@ -20,3 +20,8 @@ in the adapter. Other vendor emulation behavior is unchanged.
   SD writes for games which never use battery RAM.
 - Copy the background palette into a 128-byte stack buffer per scanline to
   reduce external-memory palette reads in the pixel loop.
+
+Presto shared game menu update: added centered 1x output and versioned full
+state snapshot/restore entry points. GB/GBC snapshots clear all host pointers
+and rebind callbacks on load; SMS/GG use the upstream portable state format.
+Game identity, length and SHA256 validation are handled by game_storage.py.

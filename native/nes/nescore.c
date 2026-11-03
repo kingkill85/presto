@@ -13,6 +13,7 @@ unsigned nes_keys;
 int nes_save_size;
 uint16_t *nes_framebuffer;
 unsigned nes_scale;
+uint32_t nes_rom_fingerprint;
 
 // Silent APU glue; CPU register storage and frame IRQ remain in the core.
 BYTE ApuC1Atl, ApuC2Atl, ApuC3a, ApuC3Atl, ApuC4Atl;
@@ -63,6 +64,8 @@ static mp_obj_t init(mp_obj_t rom_in) {
     if (b.len < offset + p[4] * 16384u + p[5] * 8192u) {
         mp_raise_ValueError(MP_ERROR_TEXT("NES: truncated ROM"));
     }
+    nes_rom_fingerprint = 2166136261u;
+    for (size_t i = 0; i < b.len; i++) nes_rom_fingerprint = (nes_rom_fingerprint ^ p[i]) * 16777619u;
     memcpy(&NesHeader, p, 16);
     memset(NesHeader.byReserve, 0, sizeof(NesHeader.byReserve));
     ROM = (BYTE *)p + offset;
@@ -142,6 +145,8 @@ static void retro_nes_line(int y, const uint16_t *src) {
 }
 
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(frame_obj, 6, 6, frame);
+#include "state.h"
+
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_chr_stats, MP_OBJ_FROM_PTR(&chr_stats_obj));
@@ -150,5 +155,9 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_get_ram, MP_OBJ_FROM_PTR(&get_ram_obj));
     mp_store_global(MP_QSTR_palette, MP_OBJ_FROM_PTR(&palette_obj));
     mp_store_global(MP_QSTR_frame, MP_OBJ_FROM_PTR(&frame_obj));
+    mp_store_global(MP_QSTR_state_size, MP_OBJ_FROM_PTR(&state_size_obj));
+    mp_store_global(MP_QSTR_save_state, MP_OBJ_FROM_PTR(&save_state_obj));
+    mp_store_global(MP_QSTR_load_state, MP_OBJ_FROM_PTR(&load_state_obj));
+    mp_store_global(MP_QSTR_state_id, mp_obj_new_str("presto-nes-v1", sizeof("presto-nes-v1")-1));
     MP_DYNRUNTIME_INIT_EXIT
 }

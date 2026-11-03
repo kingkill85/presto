@@ -24,6 +24,19 @@ void operator delete(void *p, size_t) noexcept { free(p); }
 void operator delete[](void *p, size_t) noexcept { free(p); }
 extern "C" void __cxa_pure_virtual() { scumm_runtime_fail("SCUMM pure virtual call"); }
 
+Engine *presto_active_engine = nullptr;
+extern "C" int scumm_engine_state(int op, int slot) {
+    if (!presto_active_engine) return 0;
+    if (op == 0) return (presto_active_engine->canSaveGameStateCurrently() ? 1 : 0)
+                      | (presto_active_engine->canLoadGameStateCurrently() ? 2 : 0);
+    if (slot < 1 || slot > 5) return -1;
+    if (op == 1 && presto_active_engine->canSaveGameStateCurrently())
+        return presto_active_engine->saveGameState(slot, "Presto slot").getCode() == Common::kNoError ? 1 : -1;
+    if (op == 2 && presto_active_engine->canLoadGameStateCurrently())
+        return presto_active_engine->loadGameState(slot).getCode() == Common::kNoError ? 1 : -1;
+    return -1;
+}
+
 extern "C" int scumm_engine_run(const char *path, int profile) {
     const bool monkey = profile == 1;
     // One engine session per soft reset: engine globals/singletons contain
@@ -86,7 +99,9 @@ extern "C" int scumm_engine_run(const char *path, int profile) {
     Engine *engine = monkey ? static_cast<Engine *>(new Scumm::ScummEngine_v4(g_system, dr))
                             : static_cast<Engine *>(new Scumm::ScummEngine_v5(g_system, dr));
     printf("SCUMM: running %s\n", dr.game.gameid);
+    presto_active_engine = engine;
     Common::Error result = engine->run();
+    presto_active_engine = nullptr;
     printf("SCUMM: engine returned %d\n", result.getCode());
     delete engine;
     delete static_cast<OSystem_RP2350 *>(g_system);

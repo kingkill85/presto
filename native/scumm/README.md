@@ -1,6 +1,6 @@
 # Experimental SCUMM-v4/v5 port for Presto
 
-Two explicit German DOS profiles are available in the **SCUMM** app:
+Two explicit German DOS profiles are available under **Spiele → Adventures**:
 
 | Game | Profile | SD directory | Required files |
 | --- | --- | --- | --- |
@@ -8,30 +8,30 @@ Two explicit German DOS profiles are available in the **SCUMM** app:
 | Monkey Island 2 | 2 | `/sd/scumm/monkey2-de` | `MONKEY2.000`, `MONKEY2.001` |
 
 Lowercase filenames work. The app lists complete installations, with MI2 first.
-Select with the D-pad and A, or touch a row; B/X or the lower touch button exits.
+Select with the D-pad and A, or touch a row; B or the lower touch button returns.
 The menu is composed off-screen before presentation to avoid scanout flicker.
 The former Atlantis demo was removed at the user's request, including its
 launcher/native profile and installed data. Profile 0 is rejected.
 
 This is not the general ScummVM launcher. Other editions, engines and formats
-are not advertised as supported. **Audio and the save/load menu are disabled.**
-Write access is restricted to `/sd/scumm/saves`, but game saving is not exposed
-or validated. Game files stay out of git; DOS EXEs and CD images are not used.
+are not advertised as supported. **Audio remains disabled.**
+The shared menu exposes native SCUMM slots 1–5 when game scripts allow them.
+Write access is restricted to `/sd/scumm/saves`; writes are staged and renamed
+on close, retaining a recovery copy during replacement. Game files stay out of git; DOS EXEs and CD images are not used.
 
 ## Controls and presentation
 
 - Complete 320×200 image enlarged to **480×300** with nearest-neighbour sampling.
   No blur/cropping; 1.5× necessarily gives uneven pixel sizes.
-- **SELECT / −** toggles exact centered 320×200 and the enlarged view.
+- The shared menu toggles exact centered 320×200 and the enlarged view.
 - D-pad moves the pointer; **A / B** are left/right mouse buttons.
 - **X** sends Escape (skip cutscene), **Y** Space (pause), **START / +** Enter.
-- **X+Y** exits and resets to the normal desk.
-- Touch works without a pad: tap the game to click, the upper-right black corner
-  to change zoom, or the upper-left corner to exit. No game overlays.
+- **SELECT+START** opens the common pause/save/load/zoom/restart/library menu.
+- Touch works without a pad: tap the game to click, or the upper black border
+  for the same menu. The engine clock pauses while the menu is open.
 
 `device/scumm.py` is the one-shot app entry. Each native session requires reset:
-engine globals retain arena pointers. Success or failure returns to the desk
-via reset. Explicit diagnostic launches use `run(path=..., profile=1 or 2)`.
+engine globals retain arena pointers. Exit returns to the game library via reset; restart relaunches the same game. Explicit diagnostic launches use `run(path=..., profile=1 or 2)`.
 
 ## Build
 
@@ -133,3 +133,6 @@ Keep Python-owned arenas/callbacks live during native calls; native I/O buffer
 views must not escape callbacks. Close files/native sessions in Python finally
 blocks: Python exceptions cannot unwind C++ destructors. `audit.py` is only a
 constructor dependency audit; use `build_engine.py` for the runnable engine.
+
+`tests/check_scumm_slots_device.py` exercises the shared menu and real native
+save/load in an isolated temporary directory. It never overwrites user slots.

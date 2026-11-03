@@ -1,4 +1,3 @@
-# Shared launcher retained under its original filename for existing installs.
+# Internal runtime; the visible entry point is games.py.
 from retro import main
-
 main()
