@@ -224,6 +224,7 @@ ART = {
 # file: (label, icon, "#", "o", "+")
 APPS = {
     "gb.py": ("Retro", "gamepad", "lavender", "white", "pink"),
+    "scumm.py": ("SCUMM", "gamepad", "orange", "white", "yellow"),
     "attitude_indicator.py": ("Horizont", "horizon", "blue", "white", "brown"),
     "awesome_game.py": ("Spiel", "bomb", "black", "white", "orange"),
     "cheerlights_bulb.py": ("Lampe", "bulb", "yellow", "white", "silver"),

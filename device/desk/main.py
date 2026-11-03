@@ -44,6 +44,7 @@ import time
 
 from climate_sensor import ClimateSensor
 from darkness import Darkness
+from motion_sensor import MotionSensor
 from ambient_sensor import AmbientSensor
 from gamepad import A, B, DOWN, LEFT, RIGHT, SELECT, START, UP, X, Y, Gamepad
 
@@ -57,6 +58,7 @@ from desk.scene.directors import Ball
 from desk.scene.pirate import Visit, visit_due
 from desk.scene.duo import Duo
 from desk.scene.lantern import Lantern
+from desk.scene.motion import MotionReaction
 from desk.scene.scene import WHEEL_CX
 from desk.scene.sprites import BASE_Y, C_BASE_Y, CS, S
 
@@ -109,6 +111,8 @@ frame = 0
 pad = Gamepad()
 ambient = AmbientSensor()
 climate = ClimateSensor()
+motion = MotionSensor()
+motion_reaction = MotionReaction()
 pages.climate = climate
 scene.climate = climate
 darkness = Darkness()
@@ -322,8 +326,9 @@ def pose(now, k):
     global director
     hp.reset()
     cp.reset()
-    messy.act(now, k, hp)
-    clawd.act(now, k, cp)
+    waking = motion_allowed(now) and motion_reaction.waking(now)
+    messy.act(now, k, hp, awake=waking)
+    clawd.act(now, k, cp, awake=waking)
     if director and not director.update(now, k, hp, cp):
         director = None
     critters.react(messy, hp)
@@ -348,7 +353,15 @@ def pose(now, k):
             particles.spawn("breath", messy.x + 9 * S, BASE_Y + 7 * S - hp.jump, 0.8, -0.3, 18)
         if frame % 75 == 37 and clawd.state not in ("event", "duo", "work"):
             particles.spawn("breath", clawd.x + 15 * CS, C_BASE_Y + 3 * CS - cp.jump, 0.7, -0.3, 18)
+    # Apply last so directors, blinking and weather cannot hide the reaction.
+    if motion_allowed(now):
+        motion_reaction.apply(now, motion.tilt, hp, cp,
+                              (messy.state == 'sleep', clawd.state == 'sleep'))
     return wear
+
+
+def motion_allowed(now):
+    return motion.ready and view == 'scene'
 
 
 def handle_ambient(now, dt):
@@ -361,8 +374,8 @@ def handle_ambient(now, dt):
     leds.ambient_scale = 0.25 + 0.75 * level
     if not ambient.covered:
         ambient_search_seen = False
-    blocked = seasons.bedtime(now) or view != 'scene'
-    if not ambient.connected or blocked or director or reminder.active():
+    # Sensor visits may accompany sleep, work and shared animations.
+    if not ambient.connected or view != 'scene':
         return
     if lantern:
         # A hand over the sensor during a visit must not queue another visit.
@@ -417,16 +430,17 @@ while True:
     follow_agents(now)
 
     climate.poll(now)
+    motion_event = motion.poll(now)
     handle_ambient(now, min(100, int(k * 66)))
-    if lantern and (view != "scene" or seasons.bedtime(now) or not ambient.connected
+    if lantern and (view != "scene" or not ambient.connected
                     or ambient.lux is None or ambient.light_at is None
                     or time.ticks_diff(now, ambient.light_at) > 3000):
         lantern = None
-    if darkness.poll(now, ambient, view == "scene" and not director and not lantern
-                     and not reminder.active() and not seasons.bedtime(now)):
+    if darkness.poll(now, ambient, view == "scene" and not lantern):
         lantern = Lantern(now, messy, clawd)
     if lantern and not lantern.update(now, k):
         lantern = None
+    motion_reaction.update(now, motion_event, motion_allowed(now), motion.tilt)
     wear = pose(now, k)
     critters.update(now, k, messy, clawd, cp, seasons.bedtime(now))
     reminder.update(now, k, (isinstance(director, Visit) or lantern is not None))  # not while he's really here

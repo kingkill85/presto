@@ -81,7 +81,9 @@ class ClimateTests(unittest.TestCase):
 class DarknessTests(unittest.TestCase):
     def setUp(self):
         self.gate=module('darkness').Darkness()
-        self.sensor=SimpleNamespace(connected=True,lux=1,light_at=0,near=False,proximity=0,baseline=60)
+        self.sensor=SimpleNamespace(connected=True,lux=10,light_at=0,near=False,proximity=0,baseline=60)
+        self.gate.poll(0,self.sensor,True)
+        self.sensor.lux=1
     def poll(self, t, allowed=True):
         self.sensor.light_at=t
         return self.gate.poll(t,self.sensor,allowed)
@@ -99,6 +101,23 @@ class DarknessTests(unittest.TestCase):
         self.sensor.lux=1
         self.poll(324000)
         self.assertFalse(self.poll(326000))
+    def test_dark_boot_waits_for_a_real_light_to_dark_transition(self):
+        self.gate=module('darkness').Darkness()
+        for t in (0,2000,6000,310000): self.assertFalse(self.poll(t))
+        self.sensor.lux=10
+        self.poll(312000);self.poll(314000)
+        self.sensor.lux=1
+        self.assertFalse(self.poll(316000))
+        self.assertTrue(self.poll(318000))
+    def test_reconnect_in_darkness_does_not_queue_a_visit(self):
+        self.sensor.connected=False
+        self.assertFalse(self.poll(0))
+        self.sensor.connected=True
+        for t in (100,2100,6100): self.assertFalse(self.poll(t))
+    def test_stale_reading_reestablishes_baseline(self):
+        self.poll(0)
+        self.assertFalse(self.gate.poll(4000,self.sensor,True))
+        for t in (4100,6100,8100): self.assertFalse(self.poll(t))
     def test_cover_missing_and_stale_never_trigger(self):
         self.sensor.proximity=800
         self.poll(0)

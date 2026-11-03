@@ -28,14 +28,22 @@ features and setup, and `CLAUDE.md` for further architectural context.
   interrupt external status or other directors. Covering the sensor invites
   Guybrush with `scene/lantern.py`; the actors never carry sensor-triggered lights.
   Distinguish LTR559 identity from a Qw/ST Pad at the shared alternate 0x23 address.
+- `device/lib/motion_sensor.py` polls the optional LSM6DS3TR-C at 0x6a/0x6b,
+  verifies identity, calibrates a stable initial orientation and retries absent
+  devices without blocking. Stale/disconnected data clears reactions. The pose
+  overlay in `desk/scene/motion.py` never changes actor states. Motion and lantern
+  reactions may accompany every activity, including sleep, work and directors.
+  Sleepers briefly wake visually, then resume sleeping even if tilt is held.
+  Preserve all non-sensor activity/night gates; discard gestures off the scene page.
 - `device/lib/climate_sensor.py` reads the optional BME280 at 0x76 with forced
   measurements split across frames. Clear missing/invalid values, retry with
   backoff, and include the rounded values in the Home Assistant page's redraw key.
   Reserve the climate tile and battery warning heights when laying out rooms.
 - `device/lib/darkness.py` debounces room-darkness transitions separately from
   proximity (3/8 lux hysteresis, five-minute cooldown). `scene/lantern.py` draws
-  Guybrush behind both actors without owning their status. Avoid overlapping
-  pirate visits/reminders; preserve bedtime and cancel on sensor loss.
+  Guybrush behind both actors without owning their status. Avoid repeated sensor visits; sensor-triggered lantern visits are allowed during
+  sleep and other animations. Keep other bedtime/activity gates and cancel
+  the lantern on sensor loss.
 - `device/lib/gamepad.py` reads the optional Qw/ST Pad on external I2C
   (GPIO40/41). Desk navigation and Game Boy share it. Keep the desk usable by
   touch without a pad. Game Boy requires a pad, saves and pauses on disconnect,
@@ -62,6 +70,11 @@ features and setup, and `CLAUDE.md` for further architectural context.
   Write 32-bit output rows sequentially, not interleaved halfword stores.
   Compose ROM menus/messages in a separate PicoGraphics buffer, then present
   the complete image; clearing the direct scanout causes visible flicker.
+- `device/lib/retro_clock.py` temporarily selects 300 MHz for emulation. Restore
+  the original clock for save writes, pad disconnects, exceptions and exit.
+  Keep loading/menus at the original clock; preserve original-speed pacing.
+  Do not change voltage registers. Validate clock changes on actual hardware
+  with framebuffer/PSRAM checks, not only timing benchmarks.
 - NES/SMS emulate at their original ~60 Hz and cap display at 30 Hz.
   Allow consecutive CPU-only catch-up frames when rendering overruns; never
   halve emulation speed. Heavy games can display substantially fewer images.

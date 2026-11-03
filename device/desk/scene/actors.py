@@ -175,7 +175,7 @@ class Messy(Actor):
             return "sneeze"
         return "sleep"
 
-    def act(self, now, k, p):
+    def act(self, now, k, p, awake=False):
         """Pose for this frame in its own states (not the directed ones)."""
         t = self.elapsed(now)
         state = self.state
@@ -196,6 +196,8 @@ class Messy(Actor):
             up = (t // 250) % 2
             p.paws = ((3, 7 + up), (12, 8 - up))
         elif state == "sleep":
+            if awake:
+                return  # brief sensor wake-up; keep sleep state and timer
             p.eyes = "closed"
             p.bob = (t // 1500) % 2
             if self.every(t, 1300):
@@ -365,7 +367,7 @@ class Clawd(Actor):
             return "juggle"
         return "sleep"
 
-    def act(self, now, k, p):
+    def act(self, now, k, p, awake=False):
         t = self.elapsed(now)
         state = self.state
         if state == "idle":
@@ -382,6 +384,8 @@ class Clawd(Actor):
             p.look = 1
             p.think = 1 + (t // 400) % 4
         elif state == "sleep":
+            if awake:
+                return  # brief sensor wake-up; keep sleep state and timer
             p.eyes = "closed"
             p.bob = (t // 1600) % 2
             if self.every(t, 1500):

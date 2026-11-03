@@ -9,6 +9,12 @@ device/ha_config.py
 *.nes
 *.sms
 *.sav
+*.lfl
+*.LFL
+*.lec
+*.LEC
+*.000
+*.001
 native/*/build/
 native/*/common/*.o
 native/*/*.mpy

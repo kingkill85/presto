@@ -15,6 +15,7 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 | `main.py` | Boots into the start screen (`desk.main`), or once into the app picked on its apps page. |
 | `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
 | `gb.py` | Shared Retro console: GB, GBC, Game Gear, NES and Master System; loads only the selected ROM's native core. |
+| `scumm.py` | Experimental SCUMM-v4/v5 port for German Monkey Island VGA and Monkey Island 2, with touch/gamepad input and switchable zoom. |
 | `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
 | `immich_frame.py` | Photo frame showing random photos from Immich, cached on the SD card. |
@@ -106,7 +107,29 @@ NES and SMS cap rendering at **30 FPS** while emulating at the original console
 rate (about 60 frames per second). When drawing is too expensive, additional
 images are skipped so the game can keep its speed; 30 displayed FPS are not
 guaranteed for every game. Other systems keep adaptive rendering.
-On the 200 MHz device, the reproducible gameplay benchmark in
+
+During emulation the CPU runs at **300 MHz**. The original clock (200 MHz on
+our device) is restored for save writes, a disconnected controller, errors and
+exit. ROM loading and menus retain the original clock. Unsupported clock
+requests fall back to the original frequency. No voltage-register changes or
+firmware replacement are made by the app.
+
+Short gameplay comparisons on this Presto measured these average rendered-frame
+core times; all samples maintained about 60 emulated / 30 displayed FPS:
+
+| CPU clock | NES Mario 3, level 1-1 | SMS Sonic |
+| --- | ---: | ---: |
+| 200 MHz | 20.2 ms | 18.0 ms |
+| 240 MHz | 16.9 ms | 15.0 ms |
+| 264 MHz | 15.3 ms | 13.6 ms |
+| 300 MHz | 14.7 ms | 13.2 ms |
+
+These are short tests on one board, not a stability guarantee for every Presto.
+`tests/check_retro_clock_device.py` compares fixture framebuffer checksums at
+200/300 MHz and checks a megabyte of PSRAM. `CPU_MHZ` in the gameplay benchmark
+selects a comparison clock. The emulator keeps its original pacing at every
+clock; extra speed provides headroom rather than speeding up gameplay.
+The reproducible gameplay benchmark in
 `tests/benchmark_retro_device.py` measures CPU-only and rendered frames separately.
 It loads the core after ROM allocation, matching the app's startup order.
 A visually verified 120-frame stationary sample in Mario 3 level 1-1 measured
@@ -137,6 +160,30 @@ The driver is `device/lib/gamepad.py`, using the
 It supports addresses 0x21, 0x23, 0x25 and 0x27 on the external I2C bus
 (SDA GPIO40, SCL GPIO41). Missing controllers are retried once per second.
 
+## Experimental SCUMM games
+
+**SCUMM** runs **The Secret of Monkey Island (German DOS VGA)** and
+**Monkey Island 2 (German DOS)** through native SCUMM-v4/v5 engines derived
+from FRANK Quest/Cabal. Choose the game with the D-pad and A, or tap its row.
+It works on the existing Presto firmware, tested at the normal **200 MHz**.
+These are two explicit game profiles, not the general ScummVM launcher.
+Audio and the save/load menu are not enabled.
+
+The complete 320×200 image defaults to **480×300 nearest-neighbour zoom**,
+centered with black bars. This optional 1.5× mode has uneven pixel sizes but
+no smoothing or cropping. **SELECT / −** switches to exact 1× and back.
+The D-pad moves the mouse, **A / B** click left/right, **X** skips a cutscene,
+**Y** pauses, **START / +** sends Enter and **X+Y** exits to the desk.
+Touch works without a pad: tap the game to click, the upper-right black corner
+to toggle zoom, or the upper-left black corner to exit.
+
+Monkey Island's `.LFL` and `.LEC` files belong in `/sd/scumm/monkey-vga-de`.
+Monkey Island 2 uses `monkey2.000` and `monkey2.001` in `/sd/scumm/monkey2-de`.
+Only complete installations appear in the selection. Index checksums reject
+other editions instead of guessing the engine/language. Game data are not
+included in git. Build and deployment instructions are in
+[`native/scumm/README.md`](native/scumm/README.md).
+
 ## Optional Multi-Sensor Stick
 
 The desk uses the stick's LTR559 light/proximity sensor when connected. Screen
@@ -148,14 +195,14 @@ continue working. Missing sensors are retried every two seconds.
 Hold a hand close to the sensor for about a second to invite Guybrush with his
 lantern. Messy and Clawd do not perform a separate sensor greeting or search. He lights both characters while
 their work status continues unchanged. Holding the sensor covered only triggers
-one visit; release it before inviting him again. Sensor interactions respect
-bedtime, the scene page and other scenes. Missing sensors cannot start visits.
+one visit; release it before inviting him again. Lantern visits can accompany sleep and other scenes, but only appear on the
+scene page. Missing sensors cannot start visits.
 
 When room light stays below 3 lux for two seconds, Guybrush brings a lantern
 and lights both characters, who keep their current work status. He leaves again
 after a short visit. The trigger rearms above 8 lux, with at least five minutes
-between visits; hand-triggered visits are independent of this automatic darkness cooldown. Visits wait for the
-scene page and other scenes to finish, and respect bedtime and sensor disconnects.
+between visits; hand-triggered visits are independent of this automatic darkness cooldown. A first reading at boot or after reconnect establishes the starting light level
+without inviting him. Visits wait for the scene page and cancel on sensor loss.
 
 The Home Assistant page shows a compact room-climate tile (temperature in Celsius,
 relative humidity and local pressure in hPa), even while Home Assistant is unavailable. Room rows compact automatically to
@@ -166,7 +213,25 @@ On the main scene, outdoor (sun) and indoor (house) temperatures alternate every
 30 seconds while the local sensor supplies a valid value. Without it, only
 the outdoor value appears; without outdoor data, the indoor value stays visible.
 Pressure is measured at the device, not corrected to sea level; nearby electronics
-can warm the temperature sensor. Motion integration remains future work.
+can warm the temperature sensor.
+
+The optional LSM6DS3TR-C motion sensor calibrates its resting orientation after
+about one second held still. Tilting the stick makes idle characters balance,
+a single tap makes them look forward, and shaking makes them briefly stumble.
+Tap/shake reactions have a two-second cooldown. These pose overlays can appear
+during every activity without changing work status or interrupting directors.
+Shaking causes three seconds of stumbling, taps cause 3.5 seconds of looking
+around, and tilting adds alternating balance steps. Sleeping characters wake
+for six seconds and look around before resuming sleep; holding a
+tilt does not keep them awake. Only sensor motion/lantern reactions bypass the
+sleep/activity restrictions. Off-page gestures are discarded. A loose stick senses its own movement; mount it on the Presto to
+react to movement of the whole device. Disconnects/stale data clear the effect,
+retry every two seconds and recalibrate after reconnecting.
+
+Motion register reference: [Pimoroni LSM6DS3 driver](https://github.com/pimoroni/lsm6ds3-micropython).
+The local driver uses bounded I2C reads and non-blocking calibration; hardware
+polling and synthetic gesture rendering are checked on the device. Physical
+tap/shake sensitivity may need tuning for the stick's mounting.
 
 ## Home Assistant
 

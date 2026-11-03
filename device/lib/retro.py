@@ -5,6 +5,7 @@ import machine
 import os
 import time
 
+from retro_clock import EmulationClock
 from retro_roms import SYSTEMS, discover, extension, load_core, system_for
 from gamepad import A, B, DOWN, START, UP, X, Y, Gamepad
 from presto import Presto
@@ -188,61 +189,71 @@ def run(path):
     frame_no = 0
     next_draw = 0
     clear_game()
-    exit_since = None
-    next_t = time.ticks_us()
-    skip = False
-    last_save = time.ticks_ms()
-    while True:
-        now = time.ticks_ms()
-        held = pad.poll(now)
-        if not pad.connected:
-            save(ram, sav)
-            wait_for_pad()  # no core frames while disconnected; RAM stays alive
-            clear_game()
-            next_t = time.ticks_us()
-            last_save = time.ticks_ms()
-            skip, exit_since = False, None
-            frame_no = 0
-            next_draw = 0
-            continue
-        if (held & (X | Y)) == (X | Y):
-            if exit_since is None:
-                exit_since = now
-            elif time.ticks_diff(now, exit_since) >= 1000:
+    clock = EmulationClock()
+    try:
+        clock.resume()
+        exit_since = None
+        next_t = time.ticks_us()
+        skip = False
+        last_save = time.ticks_ms()
+        while True:
+            now = time.ticks_ms()
+            held = pad.poll(now)
+            if not pad.connected:
+                clock.pause()
                 save(ram, sav)
-                machine.reset()
-        else:
-            exit_since = None
-        if zoomable and pad.pressed & Y and not held & X:
-            scale = 3 - scale
-            clear_game()
-            skip = False
-            next_t = time.ticks_us()
-            frame_no = 0
-            next_draw = 0
-        draw = not skip and frame_no >= next_draw
-        if draw:
-            next_draw = frame_no + render_every
-        err = gbcore.frame(fb, held & 0xff, 0, 0, draw, scale)
-        frame_no += 1
-        if err:
-            print("emulator error", err)
-        if draw:
-            presto.update()
-        next_t = time.ticks_add(next_t, frame_us)
-        late = time.ticks_diff(time.ticks_us(), next_t)
-        if late < 0:
-            time.sleep_us(-late)
-            skip = False
-        else:
-            skip = late > frame_us // 2 and (zoomable or not skip)
-            if late > 200000:
+                wait_for_pad()  # no core frames while disconnected; RAM stays alive
+                clock.resume()
+                clear_game()
                 next_t = time.ticks_us()
-        now = time.ticks_ms()
-        if ram is not None and time.ticks_diff(now, last_save) > SAVE_EVERY_MS:
-            if save_needed is None or save_needed():
-                save(ram, sav)
-            last_save = now
+                last_save = time.ticks_ms()
+                skip, exit_since = False, None
+                frame_no = 0
+                next_draw = 0
+                continue
+            if (held & (X | Y)) == (X | Y):
+                if exit_since is None:
+                    exit_since = now
+                elif time.ticks_diff(now, exit_since) >= 1000:
+                    clock.pause()
+                    save(ram, sav)
+                    machine.reset()
+            else:
+                exit_since = None
+            if zoomable and pad.pressed & Y and not held & X:
+                scale = 3 - scale
+                clear_game()
+                skip = False
+                next_t = time.ticks_us()
+                frame_no = 0
+                next_draw = 0
+            draw = not skip and frame_no >= next_draw
+            if draw:
+                next_draw = frame_no + render_every
+            err = gbcore.frame(fb, held & 0xff, 0, 0, draw, scale)
+            frame_no += 1
+            if err:
+                print("emulator error", err)
+            if draw:
+                presto.update()
+            next_t = time.ticks_add(next_t, frame_us)
+            late = time.ticks_diff(time.ticks_us(), next_t)
+            if late < 0:
+                time.sleep_us(-late)
+                skip = False
+            else:
+                skip = late > frame_us // 2 and (zoomable or not skip)
+                if late > 200000:
+                    next_t = time.ticks_us()
+            now = time.ticks_ms()
+            if ram is not None and time.ticks_diff(now, last_save) > SAVE_EVERY_MS:
+                if save_needed is None or save_needed():
+                    clock.pause()
+                    save(ram, sav)
+                    clock.resume()
+                last_save = now
+    finally:
+        clock.pause()
 
 
 def main():

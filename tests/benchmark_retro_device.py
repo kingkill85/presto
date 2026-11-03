@@ -10,6 +10,15 @@ MATCH=globals().get('MATCH', 'Mario Bros. 3')
 FRAME_COUNT=globals().get('FRAME_COUNT',120 if LABEL == 'NES' else 960)
 import time
 import retro
+# Optional clock comparison; leave unset to measure the app's normal turbo.
+CPU_MHZ=globals().get('CPU_MHZ', None)
+if CPU_MHZ is not None:
+    from retro_clock import EmulationClock
+    class BenchmarkClock(EmulationClock):
+        def __init__(self):
+            super().__init__()
+            self.target=CPU_MHZ * 1000000
+    retro.EmulationClock=BenchmarkClock
 from retro_roms import load_core
 retro.mount_sd()
 path=next(p for p in retro.find_roms() if MATCH in p)

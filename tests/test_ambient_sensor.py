@@ -110,14 +110,14 @@ class AmbientSceneTests(unittest.TestCase):
         functions('device/desk/main.py',('handle_ambient',),env)
         return env,calls
 
-    def test_greeting_and_cover_only_when_available(self):
+    def test_greeting_does_not_trigger_but_cover_does_even_at_night(self):
         env,calls=self.environment(1)
         env['handle_ambient'](0,25)
         self.assertEqual(calls,[])
         for busy,night in ((False,True),):
             env,calls=self.environment(2,busy,night)
             env['handle_ambient'](0,25)
-            self.assertEqual(calls,[])
+            self.assertEqual(calls,['lantern'])
         env,calls=self.environment(2)
         env['handle_ambient'](0,25)
         self.assertEqual(calls,['lantern'])
@@ -140,12 +140,19 @@ class AmbientSceneTests(unittest.TestCase):
         env['handle_ambient'](300,25)
         self.assertEqual(calls,['lantern'])
 
-    def test_missing_sensor_and_other_pirate_do_not_start_visit(self):
+    def test_missing_sensor_blocks_but_other_activity_does_not(self):
         env,calls=self.environment(2)
         env['ambient'].connected=False
         env['handle_ambient'](0,25)
         self.assertEqual(calls,[])
         env['ambient'].connected=True
         env['reminder'].active=lambda:True
+        env['director']=object()
         env['handle_ambient'](100,25)
+        self.assertEqual(calls,['lantern'])
+
+    def test_other_pages_still_block_sensor_visit(self):
+        env,calls=self.environment(2,night=True)
+        env['view']='home'
+        env['handle_ambient'](0,25)
         self.assertEqual(calls,[])

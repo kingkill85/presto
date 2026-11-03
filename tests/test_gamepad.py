@@ -206,6 +206,7 @@ class EmulatorInputTests(unittest.TestCase):
             self.assertEqual((x, y), (0, 0))
             if len(frames) >= len(states):
                 raise StopFrames()
+            self.assertEqual(env['cpu_hz'][0], 300000000)
             env['frame_modes'].append(fullscreen)
             env['frame_draws'].append(draw)
             frames.append(keys)
@@ -214,7 +215,17 @@ class EmulatorInputTests(unittest.TestCase):
         def reset():
             raise Reset()
 
-        env = dict(time=clock, machine=SimpleNamespace(reset=reset),
+        from test_retro_clock import load_clock
+        cpu_hz = [200000000]
+        def freq(value=None):
+            if value is not None:
+                cpu_hz[0] = value
+            return cpu_hz[0]
+        def checked_save(ram, path):
+            self.assertEqual(cpu_hz[0], 200000000)
+            saves.append(path)
+        machine = SimpleNamespace(reset=reset, freq=freq)
+        env = dict(time=clock, machine=machine, EmulationClock=load_clock(machine), cpu_hz=cpu_hz,
                    pad=SimpleNamespace(connected=True, pressed=0, poll=lambda now=None: states[min(len(frames), len(states)-1)]),
                    gbcore=SimpleNamespace(init=lambda rom: 0, palette=lambda *args: None, frame=frame),
                    message=lambda *args: None, short_name=lambda path: path,
@@ -224,7 +235,7 @@ class EmulatorInputTests(unittest.TestCase):
                    X_X=208, X_Y=4, FRAME_US=16742, SAVE_EVERY_MS=30000,
                    fingers=lambda: ((10, 180),) if touch_keys else (),
                    keys_at=lambda x, y: touch_keys, toggle_at=lambda x, y: False,
-                   save=lambda ram, path: saves.append(path), frame_modes=[], frame_draws=[])
+                   save=checked_save, frame_modes=[], frame_draws=[])
         env['extension'] = lambda p: '.' + p.rsplit('.', 1)[-1].lower()
         env['read_rom'] = lambda p: b'rom'
         env['load_core'] = lambda p: (env['gbcore'], 16742)
@@ -303,6 +314,7 @@ class EmulatorInputTests(unittest.TestCase):
 
         def wait():
             if not env['pad'].connected:
+                self.assertEqual(env['cpu_hz'][0], 200000000)
                 pauses.append(len(frames))
                 env['pad'].connected = True
 
@@ -314,6 +326,23 @@ class EmulatorInputTests(unittest.TestCase):
         self.assertEqual(pauses, [1])
         self.assertEqual(saves, ['test.sav'])
         self.assertEqual(frames, [1, 16, 0])
+
+    def test_autosave_uses_normal_clock_and_resumes(self):
+        env, frames, saves = self.environment([0, 0, 0])
+        env['gbcore'].init = lambda rom: 1
+        env['gbcore'].set_ram = lambda ram: None
+        env['SAVE_EVERY_MS'] = 1
+        with patch('builtins.open', mock_open(read_data=b'0')):
+            with self.assertRaises(StopFrames):
+                env['run']('test.gb')
+        self.assertTrue(saves)
+        self.assertEqual(env['cpu_hz'][0], 200000000)
+
+    def test_exception_restores_cpu_clock(self):
+        env, frames, _ = self.environment([0])
+        with self.assertRaises(StopFrames):
+            env['run']('test.gb')
+        self.assertEqual(env['cpu_hz'][0], 200000000)
 
     def test_exit_chord_saves_before_reset(self):
         env, frames, saves = self.environment([256 | 512] * 80)

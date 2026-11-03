@@ -1,0 +1,85 @@
+Source: https://github.com/rh1tech/frank-quest
+Revision: 949301b6ef87a5482340167378cd102fcdb82ef2
+
+FRANK Quest derives its adventure engines from Cabal / ScummVM.
+The decoder probe builds src/engines/scumm/bomp.cpp without modifying it.
+That file is GPL-2.0-or-later; see the upstream COPYING and COPYRIGHT files.
+The dependency audit builds a larger selection from the same revision without
+source edits. Keep upstream per-file licenses when distributing any binaries.
+No upstream source files or generated binaries are vendored in this directory.
+The C/C++ probe wrappers in this directory are GPL-2.0-or-later.
+
+Runtime/SD probe additions:
+- Builds original common/stream.cpp, str.cpp and memorypool.cpp.
+- Builds drivers/dlmalloc.c in fixed-arena, mspace-only mode (no OS allocation,
+  mmap, morecore, threads or clock dependency). The build copy changes only
+  `static struct malloc_params mparams` to an externally linked declaration
+  so MicroPython can relocate its BSS through the GOT. Upstream dlmalloc has
+  its own license header (public-domain/CC0); it remains in the build copy.
+- Builds backends/fs/rp2350/rp2350-fs.cpp with one position fix: after a large
+  read bypasses the 4096-byte buffer, refresh _bufStart from file_tell().
+  Without this, pos() and subsequent SEEK_CUR operations use a stale offset.
+  prepare_fs.py checks the exact expected source before applying that fix.
+- Initialized data are mapped to the v1.26 loader's writable RAM image by
+  prepare_data.py. Original object constructor sections are checked before
+  stripping. Unsupported static initializers cause a hard build error.
+- The read-only Cabal file API is supplied by file_bridge.c and MicroPython's
+  scumm_files.ReadSession. No upstream Pico SDK/SD drivers are used.
+
+Full-engine port additions:
+- build_engine.py compiles 187 C++ translation units (SCUMM v5, supporting
+  libraries and the RP2350 OSystem), plus our C platform/dynruntime bridge.
+  It requires the exact clean revision above; generated transformations are
+  outside that checkout and preserve all source license headers.
+- The OSystem build copy removes Pico SDK IRQ/DMA includes and IRQ masking.
+  No audio IRQs are installed; the engine runs on a single core. Presto's
+  display DMA is left to the existing firmware. The default save path changes
+  from /quest/saves to /sd/scumm/saves; noisy cursor logging is removed.
+- engine_platform.c replaces the upstream PS/2/HDMI/audio platform. It presents
+  RGB565 through MicroPython's Presto framebuffer, with exact 1x or optional
+  1.5x nearest-neighbour output and matching cursor scaling.
+- engine_bridge.c and scumm_backend.py provide timers, touch/gamepad events,
+  file/directory access and write access restricted to the saves directory.
+  Memory allocation remains confined to the caller-owned fixed arena.
+- prepare_data.py --ram-bss places zero-initialized engine statics in the
+  same writable native RAM image as initialized C++ data. This resolves local
+  PC-relative BSS references; verified zero-filled image and on-device engine
+  operation with the existing MicroPython 1.26 loader. Not flash-loader safe.
+- Engine globals and singleton pointers are used for one session only. A
+  second run requires reset; scumm.py resets to the desk on quit or failure.
+- The link includes ARM GCC's libgcc and newlib libc/libm. Retain their
+  respective licenses (including GCC Runtime Library Exception) when
+  distributing generated binaries. malloc/free and reentrant variants are
+  redirected into the fixed arena; OS/system allocation is unavailable.
+- Audio and the generic ScummVM GUI/save menu remain disabled. The initial
+  target is the official PLAYFATE DOS demo, not arbitrary game detection.
+
+German Monkey Island VGA profile:
+- Uses the existing ScummEngine_v4, GID_MONKEY_VGA, kGenRoomNum, %03d.LFL,
+  German language and the upstream VGA MIDI flags. No engine source patches.
+- Index MD5 d0b531227a27c6662018d2bd05aac52a matches scumm-md5.h's German DOS
+  VGA entry (8357 bytes). Only the user's local LFL/LEC files are deployed.
+- Both profiles now pass their verified, complete MD5 string to DetectorResult;
+  ScummEngine reads 32 characters unconditionally, so an empty string was unsafe.
+  Atlantis index MD5: 035deab53b47bc43abc763560d0f8d4b.
+- MicroPython validates SHA256 instead (this firmware has no hashlib.md5).
+  Monkey VGA index SHA256:
+  c2d8c664028d326385de016b9d781fc0a33917a1de3032b5f2fce1191baa8522
+  Atlantis demo index SHA256:
+  adea6b6db229b79b877ba1660a28f59e1ed7b335e83130660e77c9d324af3ab0
+
+Demo source (game data are not included in this repository):
+https://www.scummvm.org/demos/
+https://downloads.scummvm.org/frs/demos/scumm/atlantis-dos-demo1-en.zip
+Archive SHA256: a7e66c4b10f83b2ac25cdbbccb7790b4c022e6df006548c381f2b9ef09ee6361
+
+Current supported profiles (supersedes the earlier demo target above):
+- German Monkey Island VGA remains profile 1.
+- German Monkey Island 2 is profile 2: ScummEngine_v5, GID_MONKEY2,
+  kGenDiskNum, monkey2.%03d, German language, upstream v5 MIDI flags.
+  boot_param=10001 uses the original boot-script entry documented in the
+  pinned upstream scumm.cpp to skip the numeric recipe prompt on startup.
+  Index: 11135 bytes, MD5 6886e5d08cee329b1f2e743ae2e3ceed,
+  SHA256 b043d9dcc8510e3565bb0152f7e35e686514837e97275aa08d3ca1fcd0924ccd.
+- Atlantis profile 0 and the demo downloader were removed at the user's request.
+  The two-game menu supports touch and the existing Qw/ST Pad.
