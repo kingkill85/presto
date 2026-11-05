@@ -1,4 +1,4 @@
-// TotalSMS, shared Game Gear / Master System adapter, without audio.
+// TotalSMS, shared Game Gear / Master System adapter with PSG audio.
 #include "../common/mpy_alloc.h"
 #include "../common/retro_fb.h"
 #define sms_static_assert _Static_assert
@@ -6,7 +6,7 @@
 static void retro_sms_line(int y);
 #define SMS_SINGLE_FILE 1
 #define SMS_PIXEL_WIDTH 16
-#include "silent_psg.h"
+#include "presto_psg.h"
 #include "vendor/sms_single.c"
 
 struct SMS_Core sega;
@@ -72,7 +72,7 @@ static mp_obj_t frame(size_t n, const mp_obj_t *args) {
     SMS_set_buttons(&sega, keys, true);
     bool draw = mp_obj_is_true(args[4]);
     SMS_skip_frame(&sega, !draw);
-    uint16_t scanline[256];
+    uint16_t scanline[256] __attribute__((aligned(8)));  // read as words by retro_line2
     sega_pixels = scanline;
     SMS_set_pixels(&sega, scanline, 0, 16);
     SMS_run(&sega, SMS_RunEndFrame);
@@ -121,6 +121,27 @@ static mp_obj_t load_state(mp_obj_t obj) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(load_state_obj, load_state);
+
+// One call after EVERY emulated frame, including frames without video.
+// Output packed PWM CC words for GPIO43 (slice 9, channel B), like gbaudio.
+static mp_obj_t audio(mp_obj_t out, mp_obj_t top_obj, mp_obj_t volume_obj) {
+    mp_buffer_info_t b;
+    mp_get_buffer_raise(out, &b, MP_BUFFER_WRITE);
+    int top = mp_obj_get_int(top_obj), volume = mp_obj_get_int(volume_obj);
+    if (b.len != AUDIO_SAMPLES * 4 || ((uintptr_t)b.buf & 3) ||
+        top < 1 || top > 65535 || volume < 0 || volume > 100)
+        mp_raise_ValueError(MP_ERROR_TEXT("Sega audio: buffer/top/volume"));
+    int16_t pcm[AUDIO_SAMPLES];
+    psg_take(pcm);
+    uint32_t *dst = b.buf;
+    for (unsigned i = 0; i < AUDIO_SAMPLES; i++) {
+        int mono = (int)pcm[i] * volume / 100;
+        uint32_t duty = ((uint32_t)(mono + 32768) * top) >> 16;
+        dst[i] = duty << 16;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_3(audio_obj, audio);
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_init, MP_OBJ_FROM_PTR(&init_obj));
@@ -132,6 +153,9 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_state_size, MP_OBJ_FROM_PTR(&state_size_obj));
     mp_store_global(MP_QSTR_save_state, MP_OBJ_FROM_PTR(&save_state_obj));
     mp_store_global(MP_QSTR_load_state, MP_OBJ_FROM_PTR(&load_state_obj));
+    mp_store_global(MP_QSTR_audio, MP_OBJ_FROM_PTR(&audio_obj));
+    mp_store_global(MP_QSTR_audio_samples, mp_obj_new_int(AUDIO_SAMPLES));
+    mp_store_global(MP_QSTR_audio_rate, mp_obj_new_int(AUDIO_RATE));
     mp_store_global(MP_QSTR_state_id, mp_obj_new_str("presto-sms-v1", sizeof("presto-sms-v1")-1));
     MP_DYNRUNTIME_INIT_EXIT
 }

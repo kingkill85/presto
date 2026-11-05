@@ -7,4 +7,4 @@ CFLAGS_EXTRA = -O3 -fno-semantic-interposition -fno-strict-aliasing -std=gnu11 -
 include ../common/flags.mk
 include $(MPY_DIR)/py/dynruntime.mk
 
-$(BUILD)/smscore.o: $(wildcard vendor/*.c vendor/*.h) ../common/retro_fb.h ../common/mpy_alloc.h
+$(BUILD)/smscore.o: presto_psg.h $(wildcard vendor/*.c vendor/*.h) ../common/retro_fb.h ../common/mpy_alloc.h

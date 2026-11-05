@@ -9,7 +9,19 @@ staging buffer. Blanked rows use the converted backdrop colour rather than
 a raw palette index. GG uses 3x; SMS supports 1x/2x with a centered eight-pixel crop.
 Local changes: WRITE_UNUSED_BANK and SCANLINE_BUFFER are non-static for GOT
 relocation; init_auio passes constant dummy rates to the disabled audio mixer.
-The adapter supplies a silent PSG API (silent_psg.h), not audio emulation.
+The adapter supplies its own SN76489 (presto_psg.h, original code) behind the
+upstream PSG API: three tones and LFSR noise mixed to mono, 368 samples per
+NTSC frame (22052 Hz). Writes render up to their CPU cycle first; GG routing
+is mixed as L|R. The upstream sample callback stays unused (audio() reads the
+ring). PSG state lives in the existing 512-byte Rts slot with a magic value;
+older silent states load and start silent, so presto-sms-v1 stays compatible.
+Host check: gcc -O2 -std=gnu11 -o /tmp/psg tests/check_sms_psg_host.c.
+- vdp_render_background: tiles fully inside the region (no wrap) write their
+  eight pixels without per-pixel checks and store priority only for priority
+  tiles (prio is zeroed per line). Edge/wrapping tiles keep the upstream loop.
+  Together with single-pass 2x/3x output (common/retro_fb.h) a drawn frame
+  went from ~12.8 to ~9.4 ms (Sonic SMS, 300 MHz), so SMS/GG draw at 60 Hz.
+  Framebuffer hashes over 1800 frames of three games are identical.
 SMS_PIXEL_WIDTH=16, native heap allocation, and sms_static_assert are configured
 in the adapter. Other vendor emulation behavior is unchanged.
 - Scanline and expanded output rows use stack storage during frame(); the pixel

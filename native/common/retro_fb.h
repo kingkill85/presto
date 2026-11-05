@@ -17,27 +17,35 @@ static inline uint16_t *retro_fb(mp_obj_t obj) {
     return b.buf;
 }
 // Exactly 3x for 160px handhelds; caller provides the cached 240-word row.
+// All three rows in one pass: four pixels become 12 (three 64-bit stores per
+// row). pixels must be 4-byte aligned; row is unused.
 static inline void retro_line3(uint16_t *fb, int y, const uint16_t *pixels, uint32_t *row) {
-    for (int x = 0, out = 0; x < 160; x += 2, out += 3) {
-        uint32_t a = pixels[x], b = pixels[x + 1];
-        row[out] = a | (a << 16);
-        row[out + 1] = a | (b << 16);
-        row[out + 2] = b | (b << 16);
-    }
-    for (int dy = 0; dy < 3; dy++) {
-        uint32_t *to = (uint32_t *)(fb + (24 + y * 3 + dy) * 480);
-        for (int x = 0; x < 240; x++) to[x] = row[x];
+    uint64_t *r0 = (uint64_t *)(fb + (24 + y * 3) * 480);
+    uint64_t *r1 = r0 + 120, *r2 = r1 + 120;
+    const uint32_t *in = (const uint32_t *)pixels;
+    for (int x = 0, out = 0; x < 80; x += 2, out += 3) {
+        uint32_t ab = in[x], cd = in[x + 1];
+        uint32_t a = ab & 0xffff, b = ab >> 16, c = cd & 0xffff, d = cd >> 16;
+        uint64_t w0 = (a | (a << 16)) | ((uint64_t)(a | (b << 16)) << 32);
+        uint64_t w1 = (b | (b << 16)) | ((uint64_t)(c | (c << 16)) << 32);
+        uint64_t w2 = (c | (d << 16)) | ((uint64_t)(d | (d << 16)) << 32);
+        r0[out] = w0; r0[out + 1] = w1; r0[out + 2] = w2;
+        r1[out] = w0; r1[out + 1] = w1; r1[out + 2] = w2;
+        r2[out] = w0; r2[out + 1] = w1; r2[out + 2] = w2;
     }
 }
 
 // 256px consoles: crop eight source pixels per side, then exactly 2x.
+// Both output rows in one pass, two pixels per 64-bit store (row is unused).
 static inline void retro_line2(uint16_t *fb, int y, int top, const uint16_t *pixels, uint32_t *row) {
-    for (int x = 0; x < 240; x++) {
-        uint32_t c = pixels[x + 8];
-        row[x] = c | (c << 16);
-    }
-    for (int dy = 0; dy < 2; dy++) {
-        uint32_t *to = (uint32_t *)(fb + (top + y * 2 + dy) * 480);
-        for (int x = 0; x < 240; x++) to[x] = row[x];
+    uint64_t *a = (uint64_t *)(fb + (top + y * 2) * 480);
+    uint64_t *b = a + 120;
+    const uint32_t *in = (const uint32_t *)(pixels + 8);
+    for (int x = 0; x < 120; x++) {
+        uint32_t two = in[x];
+        uint32_t lo = two & 0xffff, hi = two >> 16;
+        uint64_t w = (lo | (lo << 16)) | ((uint64_t)(hi | (hi << 16)) << 32);
+        a[x] = w;
+        b[x] = w;
     }
 }

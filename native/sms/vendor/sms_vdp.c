@@ -902,6 +902,32 @@ static void vdp_render_background(struct SMS_Core* sms, pixel_width_t* scanline,
         const uint32_t palette = horizontal_flip ? cpal.flipped : cpal.normal;
         const uint8_t pal_base = palette_select ? 16 : 0;
 
+        // Presto: a tile fully inside the region without wrapping (the usual
+        // case) is written without per-pixel checks. prio is zeroed per line,
+        // so only priority tiles store it. Edge tiles keep the exact loop.
+        const int base = col * 8 + fine_scrollx;
+        if (base >= region.startx && base + 8 <= region.endx)
+        {
+            const uint32_t* lc = line_colour + pal_base;
+            pixel_width_t* dst = scanline + base;
+            dst[0] = lc[palette >> 28];
+            dst[1] = lc[(palette >> 24) & 0xF];
+            dst[2] = lc[(palette >> 20) & 0xF];
+            dst[3] = lc[(palette >> 16) & 0xF];
+            dst[4] = lc[(palette >> 12) & 0xF];
+            dst[5] = lc[(palette >> 8) & 0xF];
+            dst[6] = lc[(palette >> 4) & 0xF];
+            dst[7] = lc[palette & 0xF];
+            if (priority)
+            {
+                for (int x = 0; x < 8; ++x)
+                {
+                    prio->array[base + x] = ((palette >> (28 - 4 * x)) & 0xF) != 0;
+                }
+            }
+            continue;
+        }
+
         for (uint8_t x = 0; x < 8; ++x)
         {
             const uint8_t x_index = ((col * 8) + x + fine_scrollx) % SMS_SCREEN_WIDTH;
