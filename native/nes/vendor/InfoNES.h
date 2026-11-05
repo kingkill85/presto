@@ -152,6 +152,11 @@ extern BYTE PPU_UpDown_Clip;
   PPU_NameTableBank = NAME_TABLE0 + ( ( PPU_Addr & 0x0C00 ) >> 10 ); \
 }
 
+/* Presto: mid-frame vertical scroll (K6502_rw.h, InfoNES.c) */
+extern BYTE presto_v_frame;
+extern BYTE presto_v_mid;
+extern BYTE presto_nt_flip;
+
 /* Current Scanline */
 extern WORD PPU_Scanline;
 

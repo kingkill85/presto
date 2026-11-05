@@ -1,7 +1,7 @@
 https://github.com/jay-kumogata/InfoNES
 Commit fe3295c0a86bf5bbecc22aeab3b3af11f6f47908
 Apache-2.0 license retained in vendor/LICENSE. Source authorship notices retained.
-Only mappers 0,1,2,3,4,7 are included. No FDS, NSF or audio mixer.
+Only mappers 0,1,2,3,4,7 are included. No FDS or NSF; audio via presto_apu.h.
 Port changes:
 - .cpp core sources compiled as C; enum Map1_Size_t is explicitly qualified.
 - MapperTable and PPU_MirrorTable are const for the native dynamic linker.
@@ -46,3 +46,17 @@ SMB3 disassembly: https://github.com/captainsouthbird/smb3
   Validate the complete header and bank ranges before mutating the live core.
   Hardware fixtures cover mappers 0/1/2/3/4/7, CHR-ROM/RAM, deterministic
   replay, corrupt states, wrong ROMs and five slots across a device reset.
+- Mid-frame $2006 writes during rendering also set the vertical position, as
+  the PPU's v register does: the next scanline shows coarse Y * 8 + fine Y of
+  the addressed nametable (upstream had this commented out, since DrawLine
+  adds the scanline to the scroll; we subtract it and wrap the nametable).
+  A mid-frame $2005 Y write only reaches t and takes effect next frame. Fixes
+  Kirby's Adventure's title menu (garbage tiles below the logo); SMB1/SMB3
+  frames are unchanged (host comparison of 22 frames).
+- Sound: own 2A03 APU in presto_apu.h (pulses, triangle, noise, DMC, frame
+  counter, nonlinear mixer), 367 samples/frame at 22056 Hz via audio(). Upstream
+  InfoNES_pAPU is not used (unsigned envelope counters never decay, early
+  break on invalid periods). APU state is not saved; a loaded state restarts
+  it silent. Host check: tests/check_nes_apu_host.c.
+- 2x output: pens copied per line to the stack, both rows in one pass with
+  64-bit stores (~1.8 ms less per drawn frame, identical framebuffer).

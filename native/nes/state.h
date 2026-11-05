@@ -164,7 +164,10 @@ static mp_obj_t load_state(mp_obj_t obj) {
         memcpy(chr_bank_data[i], s->decoded[i], 4096);
         pbyPrevBank[i] = previous[i];
     }
-    APU_Mute = 1;
+    // The APU state is not part of v1 snapshots: restart it silent; the game's
+    // next register writes bring the music back.
+    APU_Mute = 0;
+    apu_reset();
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(load_state_obj, load_state);

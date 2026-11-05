@@ -93,6 +93,11 @@ BYTE PPU_Scr_V_Byte;
 BYTE PPU_Scr_V_Byte_Next;
 BYTE PPU_Scr_V_Bit;
 BYTE PPU_Scr_V_Bit_Next;
+// Presto: vertical scroll as set outside rendering, restored at the next
+// frame start after a mid-frame $2006 override (see K6502_rw.h).
+BYTE presto_v_frame;
+BYTE presto_v_mid;
+BYTE presto_nt_flip;
 
 /* Horizontal scroll value */
 BYTE PPU_Scr_H;
@@ -701,6 +706,19 @@ int InfoNES_HSync()
     case SCAN_TOP_OFF_SCREEN:
       // Reset a PPU status
       PPU_R2 = 0;
+
+      // Presto: like the PPU's pre-render copy of t, a mid-frame $2006
+      // scroll lasts only until the end of its frame.
+      if ( presto_v_mid )
+      {
+        presto_v_mid = 0;
+        PPU_Scr_V = PPU_Scr_V_Next = presto_v_frame;
+        PPU_Scr_V_Byte = PPU_Scr_V_Byte_Next = presto_v_frame >> 3;
+        PPU_Scr_V_Bit = PPU_Scr_V_Bit_Next = presto_v_frame & 7;
+        if ( presto_nt_flip )
+          PPU_NameTableBank ^= NAME_TABLE_V_MASK;
+        presto_nt_flip = 0;
+      }
 
       // Set up a character data
       if ( NesHeader.byVRomSize == 0 && FrameCnt == 0 )

@@ -231,6 +231,7 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
           PPU_R0 = byData;
           PPU_Increment = ( PPU_R0 & R0_INC_ADDR ) ? 32 : 1;
           PPU_NameTableBank = NAME_TABLE0 + ( PPU_R0 & R0_NAME_ADDR );
+          presto_nt_flip = 0;
           PPU_BG_Base = ( PPU_R0 & R0_BG_ADDR ) ? ChrBuf + 256 * 64 : ChrBuf;
           PPU_SP_Base = ( PPU_R0 & R0_SP_ADDR ) ? ChrBuf + 256 * 64 : ChrBuf;
           PPU_SP_Height = ( PPU_R0 & R0_SP_SIZE ) ? 16 : 8;
@@ -263,11 +264,24 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
           // Set Scroll Register
           if ( PPU_Latch_Flag )
           {
+            // Presto: during rendering a Y write only reaches t (as on the
+            // PPU); it takes effect next frame. Kirby's title menu writes
+            // $2006 then $2005 = 0 mid-frame and relies on this.
+            if ( !( PPU_R2 & R2_IN_VBLANK ) && PPU_Scanline < 240 &&
+                 ( PPU_R1 & ( R1_SHOW_SCR | R1_SHOW_SP ) ) )
+            {
+              presto_v_frame = ( byData > 239 ) ? byData - 240 : byData;
+              presto_v_mid = 1;  // reload at the next frame start
+            }
+            else
+            {
             // V-Scroll Register
             PPU_Scr_V_Next = ( byData > 239 ) ? byData - 240 : byData;	    
 	    if ( byData > 239 ) PPU_NameTableBank ^= NAME_TABLE_V_MASK; 
             PPU_Scr_V_Byte_Next = PPU_Scr_V_Next >> 3;
             PPU_Scr_V_Bit_Next = PPU_Scr_V_Next & 7;
+            presto_v_frame = PPU_Scr_V_Next;
+            }
 
             // Added : more Loopy Stuff
 	    PPU_Temp = ( PPU_Temp & 0xFC1F ) | ( ( ( (WORD)byData ) & 0xF8 ) << 2);
@@ -299,6 +313,25 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
 #endif
 	    if ( !( PPU_R2 & R2_IN_VBLANK ) ) {
 	      InfoNES_SetupScr();
+	      // Presto: mid-frame $2006 also sets the vertical position (v):
+	      // the next scanline shows row coarse Y * 8 + fine Y of the
+	      // addressed nametable. DrawLine adds the scanline to the scroll,
+	      // so subtract it, wrapping through the vertical nametable.
+	      if ( PPU_Scanline < 239 && ( PPU_R1 & ( R1_SHOW_SCR | R1_SHOW_SP ) ) )
+	      {
+	        int target = ( ( PPU_Addr >> 5 ) & 31 ) * 8 + ( ( PPU_Addr >> 12 ) & 7 );
+	        int v = ( target % 240 ) - ( PPU_Scanline + 1 );
+	        if ( v < 0 )
+	        {
+	          v += 240;
+	          PPU_NameTableBank ^= NAME_TABLE_V_MASK;
+	          presto_nt_flip ^= 1;
+	        }
+	        PPU_Scr_V_Next = v;
+	        PPU_Scr_V_Byte_Next = v >> 3;
+	        PPU_Scr_V_Bit_Next = v & 7;
+	        presto_v_mid = 1;
+	      }
 	    }
           }
           else

@@ -1,4 +1,4 @@
-// InfoNES adapter. Scanline-based rendering; no audio. See UPSTREAM.txt.
+// InfoNES adapter. Scanline-based rendering, own APU (presto_apu.h). See UPSTREAM.txt.
 #include "../common/mpy_alloc.h"
 #include "../common/retro_fb.h"
 static void retro_nes_line(int y, const uint16_t *src);
@@ -6,6 +6,7 @@ static void retro_nes_line(int y, const uint16_t *src);
 #include "vendor/InfoNES_Mapper.c"
 #include "vendor/K6502.c"
 #include "palette.h"
+#include "presto_apu.h"
 
 WORD NesPalette[64];
 uint16_t nes_pens[64];
@@ -15,15 +16,21 @@ uint16_t *nes_framebuffer;
 unsigned nes_scale;
 uint32_t nes_rom_fingerprint;
 
-// Silent APU glue; CPU register storage and frame IRQ remain in the core.
+// APU glue: writes go to presto_apu.h; frame IRQ stays in the core. The
+// former silent APU fields remain only to keep the state layout (state.h).
 BYTE ApuC1Atl, ApuC2Atl, ApuC3a, ApuC3Atl, ApuC4Atl;
 DWORD ApuC3Llc;
 int ApuQuality;
-ApuWritefunc pAPUSoundRegs[20];
-void ApuWriteControl(WORD addr, BYTE value) {}
-void InfoNES_pAPUInit(void) { APU_Mute = 1; }
+static void apu_write(WORD addr, BYTE value) { apu_queue(addr & 0x1f, value); }
+ApuWritefunc pAPUSoundRegs[20];  // filled at init: no pointer relocations in data
+void ApuWriteControl(WORD addr, BYTE value) { apu_queue(0x15, value); }
+void InfoNES_pAPUInit(void) {
+    for (int i = 0; i < 20; i++) pAPUSoundRegs[i] = apu_write;
+    APU_Mute = 0;
+    apu_reset();
+}
 void InfoNES_pAPUDone(void) {}
-void InfoNES_pAPUVsync(void) {}
+void InfoNES_pAPUVsync(void) { apu_frame(); }
 int InfoNES_Menu(void) { return -1; }
 int InfoNES_ReadRom(const char *name) { return -1; }
 void InfoNES_ReleaseRom(void) {}
@@ -82,7 +89,6 @@ static mp_obj_t init(mp_obj_t rom_in) {
         NesPalette[i] = i; // bit 15 is reserved for InfoNES sprite priority
         nes_pens[i] = retro_pen(palette_rgb[i][0], palette_rgb[i][1], palette_rgb[i][2]);
     }
-    APU_Mute = 1;
     nes_save_size = (p[6] & 2) ? sizeof(SRAM) : 0;
     return mp_obj_new_int(nes_save_size);
 }
@@ -128,14 +134,17 @@ static mp_obj_t frame(size_t n, const mp_obj_t *args) {
 static void retro_nes_line(int y, const uint16_t *src) {
     if ((unsigned)y >= 240) return;
     if (nes_scale == 2) {
-        uint32_t nes_line[240];
-        for (int x = 0; x < 240; x++) {
-            uint32_t c = nes_pens[src[x + 8] & 63];
-            nes_line[x] = c | (c << 16);
-        }
-        for (int dy = 0; dy < 2; dy++) {
-            uint32_t *to = (uint32_t *)(nes_framebuffer + (y * 2 + dy) * 480);
-            for (int x = 0; x < 240; x++) to[x] = nes_line[x];
+        // Pens once per line onto the stack (nes_pens is heap PSRAM), then
+        // both rows in one pass, two pixels per 64-bit store.
+        uint32_t pens[64];
+        for (int i = 0; i < 64; i++) pens[i] = nes_pens[i];
+        uint64_t *a = (uint64_t *)(nes_framebuffer + y * 2 * 480);
+        uint64_t *b = a + 120;
+        for (int x = 0; x < 120; x++) {
+            uint32_t p = pens[src[2 * x + 8] & 63], q = pens[src[2 * x + 9] & 63];
+            uint64_t w = (p | (p << 16)) | ((uint64_t)(q | (q << 16)) << 32);
+            a[x] = w;
+            b[x] = w;
         }
         return;
     }
@@ -145,6 +154,25 @@ static void retro_nes_line(int y, const uint16_t *src) {
 }
 
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(frame_obj, 6, 6, frame);
+
+// One call after EVERY emulated frame: the frame's samples as PWM CC words
+// for GPIO43 (slice 9, channel B), like gbaudio and smscore.
+static mp_obj_t audio(mp_obj_t out, mp_obj_t top_obj, mp_obj_t volume_obj) {
+    mp_buffer_info_t b;
+    mp_get_buffer_raise(out, &b, MP_BUFFER_WRITE);
+    int top = mp_obj_get_int(top_obj), volume = mp_obj_get_int(volume_obj);
+    if (b.len != AUDIO_SAMPLES * 4 || ((uintptr_t)b.buf & 3) ||
+        top < 1 || top > 65535 || volume < 0 || volume > 100)
+        mp_raise_ValueError(MP_ERROR_TEXT("NES audio: buffer/top/volume"));
+    uint32_t *dst = b.buf;
+    for (unsigned i = 0; i < AUDIO_SAMPLES; i++) {
+        int mono = (int)apu_out[i] * volume / 100;
+        uint32_t duty = ((uint32_t)(mono + 32768) * top) >> 16;
+        dst[i] = duty << 16;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_3(audio_obj, audio);
 #include "state.h"
 
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
@@ -158,6 +186,9 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_state_size, MP_OBJ_FROM_PTR(&state_size_obj));
     mp_store_global(MP_QSTR_save_state, MP_OBJ_FROM_PTR(&save_state_obj));
     mp_store_global(MP_QSTR_load_state, MP_OBJ_FROM_PTR(&load_state_obj));
+    mp_store_global(MP_QSTR_audio, MP_OBJ_FROM_PTR(&audio_obj));
+    mp_store_global(MP_QSTR_audio_samples, mp_obj_new_int(AUDIO_SAMPLES));
+    mp_store_global(MP_QSTR_audio_rate, mp_obj_new_int(AUDIO_RATE));
     mp_store_global(MP_QSTR_state_id, mp_obj_new_str("presto-nes-v1", sizeof("presto-nes-v1")-1));
     MP_DYNRUNTIME_INIT_EXIT
 }
