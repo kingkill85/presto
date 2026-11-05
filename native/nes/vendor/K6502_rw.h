@@ -264,11 +264,11 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
           // Set Scroll Register
           if ( PPU_Latch_Flag )
           {
-            // Presto: during rendering a Y write only reaches t (as on the
-            // PPU); it takes effect next frame. Kirby's title menu writes
-            // $2006 then $2005 = 0 mid-frame and relies on this.
-            if ( !( PPU_R2 & R2_IN_VBLANK ) && PPU_Scanline < 240 &&
-                 ( PPU_R1 & ( R1_SHOW_SCR | R1_SHOW_SP ) ) )
+            // Presto: on visible lines a Y write only reaches t (as on the
+            // PPU), even with rendering off; it takes effect next frame.
+            // Kirby's title menu and SMB3's status bar write $2006 and then
+            // $2005 mid-frame and rely on this.
+            if ( !( PPU_R2 & R2_IN_VBLANK ) && PPU_Scanline < 240 )
             {
               presto_v_frame = ( byData > 239 ) ? byData - 240 : byData;
               presto_v_mid = 1;  // reload at the next frame start
@@ -316,8 +316,9 @@ static inline void K6502_Write( WORD wAddr, BYTE byData )
 	      // Presto: mid-frame $2006 also sets the vertical position (v):
 	      // the next scanline shows row coarse Y * 8 + fine Y of the
 	      // addressed nametable. DrawLine adds the scanline to the scroll,
-	      // so subtract it, wrapping through the vertical nametable.
-	      if ( PPU_Scanline < 239 && ( PPU_R1 & ( R1_SHOW_SCR | R1_SHOW_SP ) ) )
+	      // so subtract it, wrapping through the vertical nametable. Also
+	      // with rendering off: SMB3 sets its status bar row that way.
+	      if ( PPU_Scanline < 239 )
 	      {
 	        int target = ( ( PPU_Addr >> 5 ) & 31 ) * 8 + ( ( PPU_Addr >> 12 ) & 7 );
 	        int v = ( target % 240 ) - ( PPU_Scanline + 1 );
