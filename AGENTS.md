@@ -6,18 +6,25 @@ Instructions for coding agents working anywhere in this repository.
 
 MicroPython apps for the Pimoroni Presto (RP2350, physical 480×480 touch
 screen; the desk scene uses a 240×240 framebuffer). See `README.md` for
-features and setup, and `CLAUDE.md` for further architectural context.
+features and setup. This file is the single source of agent instructions;
+`CLAUDE.md` only imports it.
 
 - `device/` mirrors the root of the device filesystem.
 - `device/main.py` boots `desk.main`, or launches an app once using
   `/ramfs/launch.txt`. It removes the launch file before importing the app;
   the following reset returns to the desk.
 - `device/desk/` is the entire start screen and launcher, not just Messy.
-  `main.py` owns the loop; `gfx`, `prefs`, `sound`, and `leds` provide shared
-  UI services; `pages` and `apps` implement the other pages.
-- `device/desk/data/` receives Herdr status and Home Assistant data.
-- `device/desk/scene/` contains the scene, character sprites, actors, scene
-  directors, seasons, particles, critters, and appointment reminders.
+  `main.py` owns the loop (touch, status overrides, poses, drawing, LEDs);
+  `gfx` (screen, palette, helpers), `prefs`, `sound`, and `leds` provide shared
+  UI services; `pages` and `apps` (app list and launch) implement the other pages.
+  A tap on the apps page writes the file name to `/ramfs/launch.txt` and resets.
+- `device/desk/data/`: `herdr` (UDP status and the daily note), `ha` (Home
+  Assistant).
+- `device/desk/scene/`: `scene` (main page), `sprites` (characters), `actors`
+  (state machines and `Pose`), `directors` (`Ball`), `duo` (`Duo`, scenes for
+  two), `pirate` (`Visit`: Guybrush's visits, one of `KINDS` each time, rare:
+  `EVERY_MS`), `seasons` (meadow, seasonal particles, holidays), `particles`,
+  `critters` (bird, snail), `reminder` (Guybrush before an appointment).
 - `device/lib/` holds shared helpers, including `haclient.py` (non-blocking
   Home Assistant client) and `tz.py` (German CET/CEST conversion from UTC).
   This directory is on the device's `sys.path`.
@@ -47,12 +54,14 @@ features and setup, and `CLAUDE.md` for further architectural context.
 - `device/lib/gamepad.py` reads the optional Qw/ST Pad on external I2C
   (GPIO40/41). Desk navigation and Game Boy share it. Keep the desk usable by
   touch without a pad. Game Boy requires a pad, saves and pauses on disconnect,
-  and resumes on reconnect. Rate-limit absent-device retries.
+  and resumes on reconnect. Reconnect is retried once per second; held keys are
+  released on disconnect.
 - Keep only apps and configuration in the device root, plus `sdcard.py`.
   The apps page discovers root `*.py` files except its `HIDDEN` entries;
   putting a helper there creates an unwanted launcher entry.
 - `device/sdcard.py` must stay in the root: the frozen, broken built-in
-  driver takes precedence over `/lib`. Our driver mounts cards at `/sd`.
+  driver takes precedence over `/lib` (and fails with v2 cards). Our driver
+  mounts cards at `/sd`.
 - `herdr-plugin/` contains host-side Python scripts and the Herdr manifest.
 - `device/games.py` is the only visible game app. `game_catalog.py` discovers
   virtual system folders without loading cores. `game_ui.py` provides the shared
@@ -85,7 +94,8 @@ features and setup, and `CLAUDE.md` for further architectural context.
   Keep loading/menus at the original clock; preserve original-speed pacing.
   Do not change voltage registers. Validate clock changes on actual hardware
   with framebuffer/PSRAM checks, not only timing benchmarks.
-- NES/SMS emulate at their original ~60 Hz and cap display at 30 Hz.
+- NES (and GBC with sound) emulate at ~60 Hz and cap display at 30 Hz; SMS/GG
+  draw every frame (fast-path background, single-pass 2x/3x output).
   Allow consecutive CPU-only catch-up frames when rendering overruns; never
   halve emulation speed. Heavy games can display substantially fewer images.
   Native scanline/output buffers use the stack only during frame(); never
@@ -98,11 +108,25 @@ features and setup, and `CLAUDE.md` for further architectural context.
   NES caches 32 decoded CHR-ROM banks (128 KiB); never evict active mappings,
   cache writable CHR RAM, or pass cache addresses to mapper PPU callbacks.
   Clear cache metadata and mapped pointers when initializing a new cartridge.
-  All cores currently omit audio. NES supports iNES 1 mappers 0,1,2,3,4,7; unsupported CHR configurations are rejected.
+  GB/GBC audio buffers sit in PSRAM and play through the XIP streamer in
+  two-frame blocks; autosave writes only changed cartridge RAM.
+  GB/GBC share native/gbaudio mixing and versioned APU-aware states; SMS/GG use `native/sms/presto_psg.h` (SN76489, cycle-timed writes, 368 samples/frame) through the same `retro_audio`; NES uses `native/nes/presto_apu.h` (own 2A03 APU, 367 samples/frame). NES supports iNES 1 mappers 0,1,2,3,4,7; unsupported CHR configurations are rejected.
 - Native BSS arrays must be non-static for `mpy_ld`, initialized tables const.
   Keep vendor licenses and record revisions and modifications in `UPSTREAM.txt`.
   `tests/rom_fixtures.py` contains original video test programs for hardware
   checks, not third-party game data. Keep downloaded games out of git.
+
+- SCUMM audio uses full-resolution P8: on firmware v1.0.0 the first half of
+  the static SRAM framebuffer is direct scanout and the unused second half
+  owns the audio queue. Preserve this ownership and the firmware-layout check
+  in `scumm_audio.py`; never copy a picture over active audio buffers. Menus
+  use P8 too and restore the game palette on return. Pause DMA for menus and
+  abort before release. Keep PWM carrier frequency separate from mixer rate.
+  Prioritize only the verified display DMA chain while sound is active; restore
+  previous priority bits on pause/exit without claiming channels or changing IRQs.
+- SCUMM also runs at 300 MHz (`retro_clock`, ~+20% frames). Menus and save
+  writes use the boot clock; audio pauses before every clock change. Audio
+  underruns come from SD room loads (130–290 ms without mixing), not from CPU.
 
 ## Privacy and local assets
 
@@ -130,12 +154,12 @@ names, credentials, and tokens out of committed code, examples, and logs.
 - Use `time.ticks_diff` and `time.ticks_add` for deadlines and elapsed time;
   `ticks_ms` wraps after roughly 12 days.
 - Create `Presto()` before connecting WiFi: it resets the radio. Preserve
-  reconnect logic because the first connection after boot can fail.
+  reconnect logic (`keep_wifi`) because the first connection after boot can fail.
 - Keep network I/O non-blocking. `lib/haclient.py` spreads requests over
   frames using non-blocking sockets. HA uses plain HTTP on the LAN because
   HTTPS requests take 1–3 seconds.
-- Keep UDP reads at least `recv(4096)`; smaller buffers silently truncate
-  pipeline messages. Read packets every frame.
+- Keep UDP reads at least `recv(4096)`; the pipeline list is ~1 KB and smaller
+  buffers silently drop it. Read packets every frame.
 - Aim for roughly 30 fps. Movement is time-based (`k = frame time / 66 ms`).
   Avoid allocations and repeated work in the hot loop: constructing a dict
   with a few hundred entries takes about 100 ms on the device.
@@ -149,7 +173,7 @@ names, credentials, and tokens out of committed code, examples, and logs.
 - Preserve the seven `pages.VIEWS`: scene, today, agents, pipelines, home,
   settings, apps. Other pages redraw only when their data/blink key changes;
   skip `presto.update()` when nothing changes.
-- Messy and Clawd are `Actor`s. Reset their `Pose` each frame, then fill it
+- Messy and Clawd are `Actor`s with a state machine (`start`, random `pick`). Reset their `Pose` each frame, then fill it
   through `act()` or the active director. `Ball`, `Duo`, and pirate `Visit`
   control both actors through `update()`, `draw()`, and `mood()`.
 - Herdr status drives Clawd (`work`, `alert`, `done`); pipeline status drives
@@ -164,8 +188,17 @@ names, credentials, and tokens out of committed code, examples, and logs.
   Show Messy's failed wheel and red pulse only for `BROKEN_MS`, restarting
   on another failure. Herdr's persistent status must not extend these forever.
 - Preserve urgency ordering (blocked, working, done, idle), compact page
-  layouts, and overflow counts. Pipeline history uses `recent_pipes` and
-  `MAX_RECENT`; scene icons respect `PIPE_ROWS` and `AGENT_ROWS`.
+  layouts, and overflow counts (`herdr._merge` sorts agents so the urgent ones
+  show wherever only a few fit: AGENTS page, icons, LEDs).
+- Left of the clock: one icon per pipeline that ran since boot, with its last
+  status (`herdr.recent_pipes`, max `MAX_RECENT`, oldest finished drop out), in
+  two columns of `PIPE_ROWS` (the wheel's rim is below). Right of the clock:
+  one icon per agent in up to two columns of `AGENT_ROWS` (above Clawd's head),
+  beyond that one per status with the number.
+- The AGENTS page (`agent_layout`) gives every agent a full row while they fit,
+  then puts the idle ones into one shared line, then shrinks rows to one line,
+  and counts the rest in a "+N" line. The PIPELINES page (`pipe_layout`) does
+  the same: passed (and canceled) ones share a line, the others get one each.
 - Detect sound events per item (`_watch_agents`, `_watch_pipes`), so one
   completion remains audible while another item is still running.
 - Age particles on every page; draw them only on the scene page.
@@ -192,7 +225,9 @@ names, credentials, and tokens out of committed code, examples, and logs.
   separate and merge only for display; closing one host clears only its data.
   Stale agents and pipelines expire after three minutes without updates.
 - `usage.py` reads `~/.cache/presto-usage.json`, written by Claude Code's
-  status line, and sends `type: usage`. Across hosts, the newest `ts` wins.
+  status line (the only place Claude Code exposes `rate_limits`), and sends
+  `type: usage`. Across hosts, the newest `ts` wins; it is shown in a slim tile
+  at the bottom of the AGENTS page.
 - `daynote.py` finds the Obsidian vault through `obsidian.json` or a `daynotes`
   override in `pipelines.json`. It reads `YYYY-MM-DD.md`, `## Termine`
   appointments such as `(13:00)`, and `## Aufgaben` tasks; no note means no

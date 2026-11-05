@@ -168,7 +168,13 @@ states and the shared pause/zoom/exit flow. Menu enlargement is stored per game 
 `/sd/games.json`. Engine switches/restarts use a clean device reset.
 
 Battery RAM is saved next to the ROM as `.sav`; disconnecting saves and pauses,
-and reconnecting resumes. All cores currently run **without audio**. NES uses
+and reconnecting resumes. Game Boy and Game Boy Color games have
+[mixed audio](native/gbaudio/README.md) through the built-in speaker.
+GB/GBC require the [audio FIFO helper](native/audiofifo/README.md) to keep
+PSRAM audio transfers from stalling display DMA. SCUMM uses SRAM audio buffers.
+SELECT+START opens the single-page menu with per-game volume (off/30/60/100%). GBC draws at up to 30 fps while emulation and audio keep their original rate.
+GG/SMS play their PSG music (SN76489), NES its 2A03 APU music. SCUMM uses AdLib music and effects. GB/GBC quick states use a new audio-aware
+format; old GB/GBC quick states are rejected, while `.sav` files remain compatible. NES uses
 InfoNES and supports mappers 0, 1, 2, 3, 4 and 7. It accepts iNES 1 and ordinary
 NTSC NES 2.0 dumps; extended sizes, submappers and unsupported RAM/CHR layouts
 are rejected. The GB core is Peanut-GB, GBC uses Walnut-CGB, and GG/SMS share
@@ -187,7 +193,8 @@ It supports addresses 0x21, 0x23, 0x25 and 0x27 on the external I2C bus
 from FRANK Quest/Cabal. Choose the game with the D-pad and A, or tap its row.
 It works on the existing Presto firmware, tested at the normal **200 MHz**.
 These are two explicit game profiles, not the general ScummVM launcher.
-Audio remains disabled. Five native SCUMM save slots are available through the shared menu.
+AdLib music and effects play through the piezo, with a per-game volume control.
+Five native SCUMM save slots are available through the shared menu.
 
 The complete 320×200 image defaults to **480×300 nearest-neighbour zoom**,
 centered with black bars. This optional 1.5× mode has uneven pixel sizes but
@@ -350,9 +357,11 @@ The Retro console also needs its native modules, built against MicroPython
 ```sh
 make -C native/gb MPY_DIR=/path/to/micropython
 make -C native/gbc MPY_DIR=/path/to/micropython
+make -C native/audiofifo MPY_DIR=/path/to/micropython
 make -C native/sms MPY_DIR=/path/to/micropython
 make -C native/nes MPY_DIR=/path/to/micropython
 mpremote fs cp native/gb/gbcore.mpy native/gbc/gbccore.mpy native/sms/smscore.mpy native/nes/nescore.mpy :lib/
+mpremote fs cp native/audiofifo/audiofifo.mpy :lib/
 ```
 
 On NixOS, add `MKDIR=mkdir RM=rm` to the make commands. Generated `.mpy` files
