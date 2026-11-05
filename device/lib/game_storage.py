@@ -66,6 +66,21 @@ def store_zoom(path, enabled):
     replace('/sd/games.json.tmp', '/sd/games.json')
 
 
+def volume_for(path, default=60):
+    value = read_settings().get('audio:' + path, default)
+    return value if isinstance(value, int) and value in (0, 30, 60, 100) else default
+
+
+def store_volume(path, value):
+    if value not in (0, 30, 60, 100):
+        raise ValueError('Ungueltige Lautstaerke')
+    settings = read_settings()
+    settings['audio:' + path] = value
+    with open('/sd/games.json.tmp', 'w') as f:
+        json.dump(settings, f)
+    replace('/sd/games.json.tmp', '/sd/games.json')
+
+
 class StateSlots:
     def __init__(self, path, core, rom, root='/sd/saves'):
         self.core = core

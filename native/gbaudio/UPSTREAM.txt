@@ -1,0 +1,18 @@
+MiniGB APU: https://github.com/deltabeard/minigb_apu
+Revision: 344d9814c0d834faf1a26ec97b57bedddefed8aa
+vendor/minigb_apu.c and .h are unmodified. MIT license, copyright Mahyar
+Koshkouei and Alex Baines. LICENSE restored from upstream initial commit
+de3e783 (the current tree references it but omits it).
+
+Experimental separate gbaudiocore module reuses ../gb/gbcore.c and its
+Peanut-GB license. Uses all four APU channels, s16 stereo at nominal 22050 Hz,
+mixed to mono PWM words. 369 samples/frame are played at 22039 Hz to match
+the DMG frame period, avoiding cumulative buffer drift. Audio register
+writes are frame-granular: this is not cycle-accurate original hardware audio.
+Initialisation powers NR52 before applying the upstream boot defaults.
+No audio thread, IRQ handler or retained stack pointers. PCM scratch is
+stack-local; only the caller-owned output buffer is passed to DMA.
+Production integration: exports versioned presto-gb-audio-v2 full states
+including the pointer-free APU context; old CPU-only snapshots are rejected.
+The normal DMG launcher now selects this module. retro_audio.py supplies
+finite forward-linked DMA buffers; the silent gbcore remains for diagnostics.

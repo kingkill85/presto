@@ -31,7 +31,7 @@ class RomDiscoveryTests(unittest.TestCase):
             p=Path(folder)/'dual.gb'
             data=bytearray(0x150)
             p.write_bytes(data)
-            self.assertEqual(roms.system_for(str(p))[1],'gbcore')
+            self.assertEqual(roms.system_for(str(p))[1],'gbaudiocore')
             data[0x143]=0x80
             p.write_bytes(data)
             self.assertEqual(roms.system_for(str(p))[1],'gbccore')

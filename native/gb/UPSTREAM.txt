@@ -3,3 +3,10 @@ Presto shared game menu update: added centered 1x output and versioned full
 state snapshot/restore entry points. GB/GBC snapshots clear all host pointers
 and rebind callbacks on load; SMS/GG use the upstream portable state format.
 Game identity, length and SHA256 validation are handled by game_storage.py.
+
+Scanline timing correction (2026-11-04): preserve lcd_count overshoot after
+subtracting LCD_LINE_CYCLES instead of resetting it to zero on entry to mode 2.
+The old reset discarded emulated time on every visible scanline, making CPU
+and timer-driven music run too fast relative to host frame pacing. No state
+layout change. tests/test_gb_timing.py exercises HALT/VBlank at DMG speed and
+both CGB CPU speeds; its generated original ROM needs no third-party assets.

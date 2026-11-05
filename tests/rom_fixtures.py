@@ -21,6 +21,45 @@ def gbc_rom():
     return rom
 
 
+def gb_audio_rom(route=0xff, color=False, double_speed=False):
+    """Original DMG program: two pulse tones, a wave and LFSR noise.
+
+    route selects NR51 channels for independent mixer checks; 0 is silence.
+    No copyrighted sound data or third-party ROM contents.
+    """
+    rom = bytearray(32768)
+    rom[0x100:0x103] = b'\xc3\x50\x01'
+    rom[0x143] = 0x80 if color else 0
+    code = bytearray(b'\xf3\x31\xf0\xdf')
+
+    def reg(addr, value):
+        code.extend(bytes((0x3e, value, 0xe0, addr)))
+
+    if double_speed:
+        reg(0x4d, 1)
+        # STOP switches CGB speed; a failed switch loops before enabling sound.
+        code.extend(b'\x10\x00\xf0\x4d\xe6\x80\x20\x02\x18\xfe')
+    reg(0x26, 0x80)
+    reg(0x24, 0x77)
+    reg(0x25, route)
+    reg(0x10, 0)
+    for addr, value in ((0x11, 0x80), (0x12, 0xa0), (0x13, 0xd6), (0x14, 0x86),
+                        (0x16, 0x40), (0x17, 0x80), (0x18, 0x72), (0x19, 0x86)):
+        reg(addr, value)
+    reg(0x1a, 0)
+    for i in range(16):
+        reg(0x30 + i, (i << 4) | (15 - i))
+    for addr, value in ((0x1a, 0x80), (0x1b, 0), (0x1c, 0x20),
+                        (0x1d, 0x80), (0x1e, 0x87),
+                        (0x20, 0), (0x21, 0x40), (0x22, 0x35), (0x23, 0x80)):
+        reg(addr, value)
+    loop = 0x150 + len(code)
+    code.extend(bytes((0xc3, loop & 255, loop >> 8)))
+    rom[0x150:0x150+len(code)] = code
+    rom[0x14d] = (-sum(rom[0x134:0x14d]) - 25) & 255
+    return rom
+
+
 def nes_rom():
     rom = bytearray(16 + 16384 + 8192)
     rom[:6] = b'NES\x1a\x01\x01'

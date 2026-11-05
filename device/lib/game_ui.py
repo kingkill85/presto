@@ -5,14 +5,15 @@ from picographics import PicoGraphics, DISPLAY_PRESTO_FULL_RES, PEN_RGB565
 
 
 class GameUI:
-    ROWS = 6
+    ROWS = 7
     def __init__(self, presto, pad, feed=None):
         self.presto, self.pad, self.feed = presto, pad, feed
         self.canvas = None
 
     def surface(self):
         if self.canvas is None:
-            self.canvas = PicoGraphics(DISPLAY_PRESTO_FULL_RES, pen_type=PEN_RGB565, layers=1)
+            self.canvas = PicoGraphics(DISPLAY_PRESTO_FULL_RES,
+                                       pen_type=getattr(self.presto, 'game_pen_type', PEN_RGB565), layers=1)
             self.canvas.set_font('bitmap8')
             from tz import localtime
             night = localtime()[3] >= 21 or localtime()[3] < 6
@@ -36,6 +37,11 @@ class GameUI:
 
     def draw(self, title, rows, selected, detail='', back='Zurueck'):
         d = self.surface()
+        compact = title == 'SPIELMENUE'
+        count, step, height = (8, 44, 38) if compact else (self.ROWS, 52, 46)
+        pages = max(1, (len(rows)+count-1)//count)
+        page_label = '%d / %d' % (selected//count+1, pages) if pages > 1 else ''
+        page_width = d.measure_text(page_label, 2) if page_label else 0
         d.set_pen(self.bg); d.clear()
         d.set_pen(self.tile)
         for i in range(14):
@@ -49,29 +55,33 @@ class GameUI:
         d.rectangle(24, 43, 40, 24); d.rectangle(32, 35, 16, 8)
         d.set_pen(self.shadow); d.text(self.fit(title, 375, 4), 88, 36, scale=4)
         d.set_pen(self.text); d.text(self.fit(title, 375, 4), 84, 32, scale=4)
-        d.set_pen(self.muted); d.text(self.fit(detail, 436), 22, 78, scale=2)
-        offset = selected // self.ROWS * self.ROWS
-        for i, row in enumerate(rows[offset:offset+self.ROWS]):
+        d.set_pen(self.muted)
+        d.text(self.fit(detail, 436-page_width-(16 if page_label else 0)), 22, 78, scale=2)
+        if page_label:
+            d.text(page_label, 458-page_width, 78, scale=2)
+        offset = selected // count * count
+        for i, row in enumerate(rows[offset:offset+count]):
             label, sub, enabled = row
-            y = 108+i*52
+            y = 108+i*step
             d.set_pen(self.accent if offset+i == selected else self.tile)
-            d.rectangle(16, y, 448, 46)
-            d.set_pen(self.tile); d.rectangle(20, y+4, 440, 38)
+            d.rectangle(16, y, 448, height)
+            d.set_pen(self.tile); d.rectangle(20, y+4, 440, height-8)
             d.set_pen(self.bg)
-            for x, yy in ((16,y),(460,y),(16,y+42),(460,y+42)):
+            for x, yy in ((16,y),(460,y),(16,y+height-4),(460,y+height-4)):
                 d.rectangle(x, yy, 4, 4)
             d.set_pen(self.text if enabled else self.muted)
-            d.text(self.fit(label, 414), 30, y+6 if sub else y+14, scale=2)
+            d.text(self.fit(label, 414), 30, y+4 if sub else y+(height-16)//2, scale=2)
             if sub:
-                d.set_pen(self.muted); d.text(self.fit(sub, 414), 30, y+25, scale=2)
-        d.set_pen(self.muted)
-        pages = max(1, (len(rows)+self.ROWS-1)//self.ROWS)
-        d.text('%d / %d' % (selected//self.ROWS+1,pages), 356, 444, scale=2)
-        d.set_pen(self.text); d.text('< '+back, 24, 444, scale=2)
+                d.set_pen(self.muted); d.text(self.fit(sub, 414), 30, y+(20 if compact else 25), scale=2)
         self.presto.presto.update(d)
 
     def choose(self, title, rows, detail='', selected=0, back='Zurueck'):
+        back_index = None
+        if not any(row[0] == back and row[2] for row in rows):
+            back_index = len(rows)
+            rows = rows + [(back, '', True)]
         selected = min(max(0, selected), max(0, len(rows)-1))
+        count, step, height = (8, 44, 38) if title == 'SPIELMENUE' else (self.ROWS, 52, 46)
         drawn = None
         ready, touched = False, True
         while True:
@@ -91,22 +101,20 @@ class GameUI:
                 if rows:
                     if actions & UP: selected = (selected-1) % len(rows)
                     elif actions & DOWN: selected = (selected+1) % len(rows)
-                    elif actions & LEFT: selected = max(0,selected-self.ROWS)
-                    elif actions & RIGHT: selected = min(len(rows)-1,selected+self.ROWS)
+                    elif actions & LEFT: selected = max(0,selected-count)
+                    elif actions & RIGHT: selected = min(len(rows)-1,selected+count)
                 if self.pad.pressed & B:
                     return None
                 if rows and self.pad.pressed & (A | START) and rows[selected][2]:
-                    return selected
+                    return None if selected == back_index else selected
                 if touching and not touched:
-                    if touch.y >= 432 and touch.x < 330:
-                        return None
-                    row = (touch.y-108)//52
-                    index = selected//self.ROWS*self.ROWS+row
-                    if (16 <= touch.x < 464 and 0 <= row < self.ROWS
-                            and (touch.y-108)%52 < 46 and index < len(rows)):
+                    row = (touch.y-108)//step
+                    index = selected//count*count+row
+                    if (16 <= touch.x < 464 and 0 <= row < count
+                            and (touch.y-108)%step < height and index < len(rows)):
                         selected = index
                         if rows[index][2]:
-                            return index
+                            return None if index == back_index else index
             touched = touching
             time.sleep_ms(16)
 
@@ -125,33 +133,45 @@ class GameUI:
                 return
             time.sleep_ms(16)
 
-    def pause(self, title, zoom, slots, set_zoom):
+    def pause(self, title, zoom, slots, set_zoom, audio=None, set_volume=None):
+        selected = 0
         while True:
             can_save, can_load = slots.capabilities()
             note = '' if can_save else 'Hier nicht verfuegbar'
-            choice = self.choose('SPIELMENUE', [
+            rows = [
                 ('Fortsetzen', '', True),
                 ('Speichern', note, can_save),
                 ('Laden', '' if can_load else 'Hier nicht verfuegbar', can_load),
                 ('Vergroesserung: '+('AN' if zoom else 'AUS'), '', True),
                 ('Spiel neu starten', '', True),
                 ('Zur Spiele-Auswahl', '', True),
-            ], title, back='Fortsetzen')
+            ]
+            if audio is not None:
+                rows.insert(4, ('Ton: '+(str(audio.volume)+'%' if audio.volume else 'AUS'), '', True))
+            choice = self.choose('SPIELMENUE', rows, title, selected=selected, back='Fortsetzen')
             if choice is None or choice == 0:
                 self.release()
                 return 'resume', zoom
-            if choice == 3:
+            selected = choice
+            action = choice - 1 if audio is not None and choice > 4 else choice
+            if choice == 4 and audio is not None:
+                try:
+                    levels = (0, 30, 60, 100)
+                    set_volume(levels[(levels.index(audio.volume) + 1) % len(levels)])
+                except (OSError, ValueError) as error:
+                    self.notice('NICHT GESPEICHERT', str(error))
+            elif action == 3:
                 try:
                     set_zoom(not zoom)
                     zoom = not zoom
                 except (OSError, ValueError) as error:
                     self.notice('NICHT GESPEICHERT', str(error))
-            elif choice in (4, 5):
-                if choice == 5 or self.confirm('NEUSTART?', 'Ungesicherter Fortschritt geht verloren'):
+            elif action in (4, 5):
+                if action == 5 or self.confirm('NEUSTART?', 'Ungesicherter Fortschritt geht verloren'):
                     self.release()
-                    return ('restart' if choice == 4 else 'exit'), zoom
-            elif choice in (1, 2):
-                saving = choice == 1
+                    return ('restart' if action == 4 else 'exit'), zoom
+            elif action in (1, 2):
+                saving = action == 1
                 try:
                     infos = [slots.info(n) for n in range(1,6)]
                     slot = self.choose('SPEICHERN' if saving else 'LADEN', [

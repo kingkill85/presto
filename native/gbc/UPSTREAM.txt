@@ -1,10 +1,28 @@
 https://github.com/Mr-PauI/Walnut-CGB
 Commit a42c186917516cc9c80515ceae1121600a071628
-vendor/walnut_cgb.h is unchanged. MIT license is in vendor/LICENSE.
+vendor/walnut_cgb.h has the scanline timing correction described below. MIT license is in vendor/LICENSE.
 Adapter adds the missing forward declaration, bounded 8/16/32-bit ROM reads,
-byte-swapped RGB565 output, cached integer scaling, and disables sound.
+byte-swapped RGB565 output, cached integer scaling, and shared MiniGB APU sound through ../gbaudio/gbaudiocore.c.
 
 Presto shared game menu update: added centered 1x output and versioned full
 state snapshot/restore entry points. GB/GBC snapshots clear all host pointers
 and rebind callbacks on load; SMS/GG use the upstream portable state format.
 Game identity, length and SHA256 validation are handled by game_storage.py.
+
+Audio integration: Makefile compiles the shared DMG/CGB audio adapter with
+GBC_AUDIO and the unmodified MiniGB APU recorded in ../gbaudio/UPSTREAM.txt.
+The Walnut header has the scanline timing correction described below. The adapter routes wide reads
+crossing FF3F back through the CPU byte reader, avoiding out-of-bounds APU
+register access. Audio advances once per video frame at either CGB CPU speed.
+Full states now include the APU and use presto-gbc-audio-v2; old GBC quick
+states are rejected. Battery RAM layout is unchanged. Output, volume and
+pause/disconnect handling reuse retro_audio.py and the shared game menu.
+This remains frame-granular MiniGB synthesis, not cycle-accurate CGB sound.
+
+Scanline timing correction (2026-11-04): preserve lcd_count overshoot after
+subtracting LCD_LINE_CYCLES instead of resetting it to zero on entry to mode 2.
+The old reset discarded emulated time on every visible scanline, making CPU
+and timer-driven music run too fast relative to host frame pacing. No state
+layout change. tests/test_gb_timing.py exercises HALT/VBlank at DMG speed and
+both CGB CPU speeds; its generated original ROM needs no third-party assets.
+The same correction is applied to all three Walnut CPU execution paths.

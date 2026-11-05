@@ -11,7 +11,9 @@
 #include "py/dynruntime.h"
 
 #define WALNUT_GB_IS_LITTLE_ENDIAN 1
+#ifndef ENABLE_SOUND
 #define ENABLE_SOUND 0
+#endif
 #define ENABLE_LCD 1
 struct gb_s;
 #include "vendor/walnut_cgb.h"
@@ -32,9 +34,6 @@ uint16_t *fb;  // where line 0, pixel 0 goes
 uint16_t shades[4];
 int error;
 int fullscreen;
-// Expand in fast SRAM, then write whole words sequentially to display PSRAM.
-// Alternating halfword stores between three distant rows is very expensive.
-uint32_t expanded_line[FULL_W / 2];
 
 void abort(void) {
     mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("gb: abort"));
@@ -69,19 +68,29 @@ static void on_error(struct gb_s *g, const enum gb_error_e err, const uint16_t a
 
 static void draw_line(struct gb_s *g, const uint8_t *pixels, const uint_fast8_t line) {
     if (fullscreen == 1) {
-        uint16_t *row = fb + (TOP + line * SCALE) * FULL_W;
-        for (int x = 0, out = 0; x < LCD_WIDTH; x += 2, out += 3) {
-            uint32_t a = (gb.cgb.cgbMode ? __builtin_bswap16(gb.cgb.fixPalette[pixels[x] & 63]) : shades[pixels[x] & 3]);
-            uint32_t b = (gb.cgb.cgbMode ? __builtin_bswap16(gb.cgb.fixPalette[pixels[x + 1] & 63]) : shades[pixels[x + 1] & 3]);
-            expanded_line[out] = a | (a << 16);
-            expanded_line[out + 1] = a | (b << 16);
-            expanded_line[out + 2] = b | (b << 16);
+        // Palette once per line onto the stack (byte-swapped), then all three
+        // rows in one pass with 64-bit stores: 4 pixels -> 3 dwords per row.
+        // (The former expanded_line lived in heap PSRAM: 3.1 of 7.7 ms/frame.)
+        uint32_t pal[64];
+        unsigned mask;
+        if (gb.cgb.cgbMode) {
+            for (int i = 0; i < 64; i++) pal[i] = __builtin_bswap16(gb.cgb.fixPalette[i]);
+            mask = 63;
+        } else {
+            for (int i = 0; i < 4; i++) pal[i] = shades[i];
+            mask = 3;
         }
-        for (int y = 0; y < SCALE; y++) {
-            uint32_t *to = (uint32_t *)(row + y * FULL_W);
-            for (int x = 0; x < FULL_W / 2; x++) {
-                to[x] = expanded_line[x];
-            }
+        uint64_t *r0 = (uint64_t *)(fb + (TOP + line * SCALE) * FULL_W);
+        uint64_t *r1 = r0 + FULL_W / 4, *r2 = r1 + FULL_W / 4;
+        for (int x = 0, out = 0; x < LCD_WIDTH; x += 4, out += 3) {
+            uint32_t a = pal[pixels[x] & mask], b = pal[pixels[x + 1] & mask];
+            uint32_t c = pal[pixels[x + 2] & mask], d = pal[pixels[x + 3] & mask];
+            uint64_t w0 = (a | (a << 16)) | ((uint64_t)(a | (b << 16)) << 32);
+            uint64_t w1 = (b | (b << 16)) | ((uint64_t)(c | (c << 16)) << 32);
+            uint64_t w2 = (c | (d << 16)) | ((uint64_t)(d | (d << 16)) << 32);
+            r0[out] = w0; r0[out + 1] = w1; r0[out + 2] = w2;
+            r1[out] = w0; r1[out + 1] = w1; r1[out + 2] = w2;
+            r2[out] = w0; r2[out + 1] = w1; r2[out + 2] = w2;
         }
         return;
     }
@@ -209,6 +218,7 @@ static mp_obj_t load_state(mp_obj_t obj) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(load_state_obj, load_state);
 
+#ifndef GB_CUSTOM_MODULE
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_init, MP_OBJ_FROM_PTR(&init_obj));
@@ -221,3 +231,4 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t *self, size_t n_args, size_t n_kw, mp_obj_t *a
     mp_store_global(MP_QSTR_state_id, mp_obj_new_str("presto-gbc-v1", sizeof("presto-gbc-v1")-1));
     MP_DYNRUNTIME_INIT_EXIT
 }
+#endif

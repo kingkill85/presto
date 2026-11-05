@@ -7,3 +7,5 @@ ARCH = armv7emsp
 CFLAGS_EXTRA = -O2 -std=gnu11 -Wno-error -Wno-unused-function -Wno-unused-variable
 include ../common/flags.mk
 include $(MPY_DIR)/py/dynruntime.mk
+
+$(BUILD)/gbcore.o: peanut_gb.h

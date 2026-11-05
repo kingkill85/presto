@@ -3,7 +3,7 @@ import os
 
 # label, native module, frame period in microseconds
 SYSTEMS = {
-    '.gb': ('GB', 'gbcore', 16742),
+    '.gb': ('GB', 'gbaudiocore', 16743),
     '.gbc': ('GBC', 'gbccore', 16742),
     '.gg': ('GG', 'smscore', 16688),
     '.nes': ('NES', 'nescore', 16639),

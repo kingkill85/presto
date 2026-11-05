@@ -3487,7 +3487,7 @@ void __gb_step_cpu(struct gb_s *gb)
 
 				/* OAM Search occurs at the start of the line. */
 				gb->hram_io[IO_STAT] = (gb->hram_io[IO_STAT] & ~STAT_MODE) | IO_STAT_MODE_OAM_SCAN;
-				gb->counter.lcd_count = 0;
+				/* Keep the cycles carried past the scanline boundary. */
 
 				if(gb->hram_io[IO_STAT] & STAT_MODE_2_INTR)
 					gb->hram_io[IO_IF] |= LCDC_INTR;
