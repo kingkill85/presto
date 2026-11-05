@@ -8,8 +8,9 @@ import time
 from scumm_files import ReadSession
 from game_controls import MenuChord
 from game_catalog import SCUMM_GAMES, installed_adventures
-from game_storage import exists, recover, replace, zoom_for, store_zoom, stamp
+from game_storage import exists, recover, replace, zoom_for, store_zoom, stamp, volume_for, store_volume
 from gamepad import Gamepad, A, B, X, Y, START, SELECT, LEFT, RIGHT, UP, DOWN
+from retro_clock import EmulationClock
 
 
 class FileSession(ReadSession):
@@ -115,8 +116,12 @@ class FileSession(ReadSession):
 
 
 class Backend:
-    def __init__(self, presto, duration=0, watchdog=None, zoom=True, zoom_fn=None, path=None, profile=None, state_fn=None):
+    def __init__(self, presto, duration=0, watchdog=None, zoom=True, zoom_fn=None, path=None, profile=None, state_fn=None, audio=None, clock=None):
         self.presto = presto
+        # 300 MHz while the engine runs (+19% frames); menus and save writes
+        # use the boot clock. Audio stops before every clock change, so its
+        # PWM is recreated at the current clock when pump() resumes it.
+        self.clock = clock
         self.files = FileSession()
         self.pad = Gamepad()
         self.watchdog = watchdog
@@ -135,6 +140,9 @@ class Backend:
         self.zoom_fn = zoom_fn
         self.path, self.profile = path, profile
         self.state_fn = state_fn
+        self.audio = audio
+        self.resume_after_write = False
+        self.turbo_after_write = False
         self.chord = MenuChord()
         self.ui = None
         self.menu_action = 'exit'
@@ -195,6 +203,10 @@ class Backend:
 
     def pause_menu(self):
         from game_ui import GameUI
+        if self.audio:
+            self.audio.pause()
+        if self.clock:
+            self.clock.pause()
         if self.ui is None:
             self.ui = GameUI(self.presto, self.pad, self.watchdog.feed if self.watchdog else None)
         slots = ScummSlots(self.state_fn, self.profile)
@@ -203,15 +215,25 @@ class Backend:
             store_zoom(self.path, value)
             if self.zoom_fn:
                 self.zoom_fn(value)
+        def set_volume(value):
+            store_volume(self.path, value)
+            self.audio.volume = value
+        action = None
         try:
             action, self.zoom = self.ui.pause('Monkey Island' + (' 2' if self.profile == 2 else ''),
-                                               self.zoom, slots, set_zoom)
+                                               self.zoom, slots, set_zoom, self.audio, set_volume)
         finally:
             memoryview(self.presto.display)[:] = picture
             del picture
+            if hasattr(self.presto, 'palette_dirty'):
+                self.presto.palette_dirty = True
             self.presto.update()
+            if self.clock:
+                self.clock.resume()
             self.last_tick = time.ticks_ms()  # pause does not advance the engine clock
             self.next_input = self.last_tick
+            if self.audio and action in ('resume', 'saved', 'loaded'):
+                self.audio.suspended = False
         # Release game inputs held when the menu opened; no stuck mouse/key.
         if self.buttons & A or self.touching: self.events.append((5,self.x,self.y))
         if self.buttons & B: self.events.append((7,self.x,self.y))
@@ -228,7 +250,23 @@ class Backend:
     def __call__(self, op, a, b):
         self.now()
         if op < 100:
-            return self.files(op, a, b)
+            if op == 10 and not self.files.writes:
+                if self.audio:
+                    self.resume_after_write = not self.audio.suspended
+                    self.audio.pause()
+                # Menu saves already run at the boot clock; keep it there.
+                self.turbo_after_write = bool(self.clock and self.clock.active)
+                if self.clock:
+                    self.clock.pause()
+            try:
+                return self.files(op, a, b)
+            finally:
+                if self.turbo_after_write and not self.files.writes:
+                    self.turbo_after_write = False
+                    self.clock.resume()
+                if self.audio and self.resume_after_write and not self.files.writes:
+                    self.resume_after_write = False
+                    self.audio.suspended = False
         if op == 100:
             return self.elapsed & 0xffffffff
         if op == 101:
@@ -245,7 +283,16 @@ class Backend:
             self.frames += 1
             return 0
         if op == 103:
+            if self.audio:
+                self.audio.pump()
             return self.event()
+        if op == 104:
+            if self.audio:
+                self.audio.pump()
+            return 0
+        if op == 106:
+            self.presto.set_palette(a)
+            return 0
         raise ValueError('Unsupported SCUMM callback')
 
 
@@ -303,7 +350,7 @@ def choose_on_screen(presto, games):
     if not games:
         raise OSError('No supported SCUMM games installed')
     from picographics import PicoGraphics, DISPLAY_PRESTO_FULL_RES, PEN_RGB565
-    canvas = PicoGraphics(DISPLAY_PRESTO_FULL_RES, pen_type=PEN_RGB565, layers=1)
+    canvas = PicoGraphics(DISPLAY_PRESTO_FULL_RES, pen_type=getattr(presto, 'game_pen_type', PEN_RGB565), layers=1)
     canvas.set_font('bitmap8')
     bg = canvas.create_pen(29, 43, 83)
     fg = canvas.create_pen(255, 241, 232)
@@ -358,7 +405,13 @@ def choose_on_screen(presto, games):
 def run(path=None, duration=0, profile=None):
     from presto import Presto
     import sdcard
-    presto = Presto(full_res=True, direct_to_fb=True, layers=1, ambient_light=False)
+    import scummcore
+    audio = None
+    if hasattr(scummcore, 'audio'):
+        from scumm_audio import Display, Audio
+        presto = Display()
+    else:
+        presto = Presto(full_res=True, direct_to_fb=True, layers=1, ambient_light=False)
     try:
         os.stat('/sd')
     except OSError:
@@ -390,22 +443,31 @@ def run(path=None, duration=0, profile=None):
             digest.update(block)
     if binascii.hexlify(digest.digest()) != expected:
         raise ValueError('Unsupported SCUMM game edition')
-    import scummcore
+    if hasattr(scummcore, 'audio'):
+        audio = Audio(scummcore, presto, volume_for(path, 100))
     gc.collect()
     print('SCUMM heap before arena:', gc.mem_free())
     arena = bytearray(4 * 1024 * 1024)
     zoom = zoom_for(path)
     scummcore.zoom(zoom)
+    clock = EmulationClock()
     backend = Backend(presto, duration, machine.WDT(timeout=8000), zoom=zoom,
-                      zoom_fn=scummcore.zoom, path=path, profile=profile, state_fn=getattr(scummcore, 'state', None))
+                      zoom_fn=scummcore.zoom, path=path, profile=profile, state_fn=getattr(scummcore, 'state', None),
+                      audio=audio, clock=clock)
     try:
+        clock.resume()
         result = scummcore.run(arena, backend, memoryview(presto.display), path, profile)
         print('SCUMM result:', result, 'frames:', backend.frames, 'ms:', backend.elapsed)
+        if audio:
+            print('SCUMM audio blocks:', audio.blocks, 'underruns:', audio.underruns)
         if not duration:
             from game_launch import queue
             queue('scumm.py' if backend.menu_action == 'restart' else 'games.py',
                   dict(path=path, profile=profile, system='SCUMM'))
         return result
     finally:
+        if audio:
+            audio.pause()
+        clock.pause()
         backend.files.close()
         scummcore.close()

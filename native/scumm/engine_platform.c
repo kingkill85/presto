@@ -5,6 +5,8 @@
 #include <string.h>
 extern long scumm_host_call(int op, long a, long b);
 uint16_t *scumm_framebuffer;
+bool scumm_indexed;
+extern void scumm_host_palette(const uint8_t *rgb);
 CabalSurface scumm_screen;
 uint8_t scumm_rgb[768];
 uint16_t scumm_pens[256];
@@ -24,12 +26,47 @@ void cabal_init_graphics(int w, int h) {
     scumm_screen.width = scumm_screen.pitch = w;
     scumm_screen.height = h;
     scumm_screen.bytesPerPixel = 1;
-    memset(scumm_framebuffer, 0, 480 * 480 * 2);
+    memset(scumm_framebuffer, 0, 480 * 480 * (scumm_indexed ? 1 : 2));
 }
 CabalSurface *cabal_lock_screen(void) { return &scumm_screen; }
 void cabal_unlock_screen(void) { }
+// Palette mode frees the firmware-owned SRAM backbuffer for audio.
+static void indexed_update(void) {
+    uint8_t *fb=(uint8_t *)scumm_framebuffer;
+    if (scumm_zoom_dirty) { memset(fb,0,480*480); scumm_zoom_dirty=false; }
+    uint32_t packed[120];
+    uint8_t cursor_row[320];
+    for (int y=0;y<200;++y) {
+        const uint8_t *src=scumm_screen.pixels+y*320;
+        int cy=y-scumm_my+scumm_hy;
+        if (scumm_cursor_visible && scumm_cursor && cy>=0 && cy<scumm_ch) {
+            memcpy(cursor_row,src,320);
+            for (int cx=0;cx<scumm_cw;++cx) {
+                int x=scumm_mx-scumm_hx+cx;
+                uint8_t c=scumm_cursor[cy*scumm_cw+cx];
+                if (x>=0 && x<320 && c!=scumm_ckey) cursor_row[x]=c;
+            }
+            src=cursor_row;
+        }
+        int dy=scumm_zoom ? 90+(y*3+1)/2 : 140+y;
+        if (scumm_zoom) {
+            uint32_t *out=packed;
+            for (int x=0;x<320;x+=8) {
+                uint32_t a=src[x],b=src[x+1],c=src[x+2],d=src[x+3];
+                uint32_t e=src[x+4],f=src[x+5],g=src[x+6],h=src[x+7];
+                *out++=a|(a<<8)|(b<<16)|(c<<24);
+                *out++=c|(d<<8)|(e<<16)|(e<<24);
+                *out++=f|(g<<8)|(g<<16)|(h<<24);
+            }
+            memcpy(fb+dy*480,packed,480);
+            if (!(y&1)) memcpy(fb+(dy+1)*480,packed,480);
+        } else memcpy(fb+dy*480+80,src,320);
+    }
+    scumm_host_call(102,0,0);
+}
 void cabal_update_screen(void) {
     if (!scumm_screen.pixels) return;
+    if (scumm_indexed) { indexed_update(); return; }
     if (scumm_zoom_dirty) {
         // Only borders need clearing. The image itself is overwritten below.
         int top = scumm_zoom ? 90 : 140;
@@ -88,6 +125,7 @@ void cabal_update_screen(void) {
 void cabal_set_palette(const uint8_t *colors, int start, int num) {
     if (start < 0 || num < 0 || start+num > 256) scumm_runtime_fail("Bad palette range");
     memcpy(scumm_rgb+start*3, colors, num*3);
+    if (scumm_indexed) scumm_host_palette(scumm_rgb);
     for (int i = 0; i < num; ++i) {
         unsigned c = ((colors[0]&248)<<8) | ((colors[1]&252)<<3) | (colors[2]>>3);
         scumm_pens[start+i] = (c>>8) | (c<<8); // Presto RGB565 byte order

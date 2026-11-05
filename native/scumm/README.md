@@ -14,7 +14,7 @@ The former Atlantis demo was removed at the user's request, including its
 launcher/native profile and installed data. Profile 0 is rejected.
 
 This is not the general ScummVM launcher. Other editions, engines and formats
-are not advertised as supported. **Audio remains disabled.**
+are not advertised as supported. AdLib music and effects use the built-in piezo.
 The shared menu exposes native SCUMM slots 1–5 when game scripts allow them.
 Write access is restricted to `/sd/scumm/saves`; writes are staged and renamed
 on close, retaining a recovery copy during replacement. Game files stay out of git; DOS EXEs and CD images are not used.
@@ -32,6 +32,54 @@ on close, retaining a recovery copy during replacement. Game files stay out of g
 
 `device/scumm.py` is the one-shot app entry. Each native session requires reset:
 engine globals retain arena pointers. Exit returns to the game library via reset; restart relaunches the same game. Explicit diagnostic launches use `run(path=..., profile=1 or 2)`.
+
+## Audio and display ownership
+
+The 22,050 Hz stereo mixer is downmixed to mono. Samples are repeated twice for
+44,100 Hz PWM on GPIO43, keeping the carrier above the audible band without
+speeding up music. Per-block peak measurement bounds amplification with headroom;
+volume remains independent (0/30/60/100%, default 100% for SCUMM). The menu stops
+DMA before its controls/save actions and resumes only after returning to the game,
+including after saving or loading.
+Exit and exceptions abort DMA before releasing it.
+
+On **Presto v1.0.0**, the static 460,800-byte SRAM framebuffer has two halves in
+full-resolution P8 mode. The native indexed renderer writes the first half
+(scanout), and audio owns 65,536 bytes of the unused second half. The driver stays
+alive throughout. The layout is checked before constructing non-owning views;
+this is firmware-specific, not an allocator for arbitrary SRAM addresses.
+The 256 original palette entries and both zoom modes are preserved. Menu canvases
+also use P8; returning restores the game palette. The RGB565 diagnostic renderer
+remains available. Do not copy a full picture into the audio-owned backbuffer.
+
+Two finite DMA buffers hold roughly 186 ms each to bridge SD/resource stalls.
+Each safe callback mixes only one 1024-sample chunk to avoid long animation stalls.
+Mixing is cooperative at screen updates, event polling and bounded delay chunks;
+there are no new audio IRQs. Delay deadlines include time spent mixing. PSRAM DMA
+caused horizontal display artifacts in A/B hardware tests; reducing sample rate
+did not fix them and made the PWM carrier audible. SRAM output eliminated the
+initially reported lines, but intermittent lines reappeared in longer play.
+The four verified PIO1 display DMA channels therefore receive temporary high
+priority while audio runs; their previous priority is restored on pause/exit.
+Only the priority bit in the non-triggering control alias changes, after checking
+the live display-chain mapping. No channel is reclaimed or aborted and no display
+IRQ is changed. The follow-up interactive test no longer showed noticeable lines.
+The engine runs at 300 MHz (`retro_clock`); menus and save writes return to
+the boot clock with audio paused. MI2 measured 2582 instead of ~2090 frames in
+90 s; underruns (5) stayed the same, they follow SD room loads.
+Rare underruns during loading can still cause brief interruptions;
+this is not a full playthrough validation. Interactive MI2 checks ran for three
+minutes, including controls, with 4–7 queue underruns; the subsequent two-minute
+priority check recorded eight. Isolated native save/load checks passed for both
+profiles and confirmed audio resumed after loading. The host suite covers gain
+headroom, chunk scheduling, menu cleanup and priority restoration, in addition
+to the exact RGB565/P8 renderer fixture.
+
+Interactive check (intro skipped, three minutes by default):
+
+```sh
+timeout 205 mpremote exec "PROFILE=2" + run tests/check_scumm_audio_device.py
+```
 
 ## Build
 
@@ -56,7 +104,7 @@ existing checkout for make. The engine builder requires the exact clean
 upstream revision. Generated sources, objects and native modules remain ignored.
 Licenses stay in generated copies; transformations are recorded in `UPSTREAM.txt`.
 
-The module occupies about 906 KB native text/data and uses a caller-owned
+The module occupies about 1.04 MB native text/data and uses a caller-owned
 4 MiB arena. These are allocations, not measured minimum game requirements.
 The 187 C++ source build includes the engines, supporting libraries and OSystem;
 our C/MicroPython backend supplies the device interfaces.
@@ -76,7 +124,7 @@ Copy your game files to the directories above, then from the repository root:
 
 ```sh
 timeout 120 mpremote fs cp native/scumm/scummcore.mpy :/lib/scummcore.mpy
-timeout 20 mpremote fs cp device/lib/scumm_files.py device/lib/scumm_backend.py :/lib/
+timeout 20 mpremote fs cp device/lib/scumm_files.py device/lib/scumm_backend.py device/lib/scumm_audio.py device/lib/retro_audio.py :/lib/
 timeout 20 mpremote fs cp device/scumm.py :/scumm.py
 timeout 20 mpremote fs cp device/desk/apps.py :/desk/apps.py
 timeout 20 mpremote reset

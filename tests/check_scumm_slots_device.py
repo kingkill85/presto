@@ -15,6 +15,8 @@ original_release=GameUI.release
 stages=[]
 steps=[]
 reads=[]
+active_backend=None
+audio_after_load=0
 events=[(2000,(1,27,27)),(2030,(2,27,27)),(5000,(1,27,27)),(5030,(2,27,27))]
 
 
@@ -37,6 +39,9 @@ def slots_init(self,fn,profile):
 
 
 def choose(self,title,rows,detail='',selected=0,back='Zurueck'):
+    if active_backend.audio:
+        assert active_backend.audio.suspended and not active_backend.audio.channels, 'Audio still active in menu'
+        assert not active_backend.presto.audio_priority.saved, 'Display priority not restored in menu'
     selected=steps.pop(0)
     self.draw(title,rows,selected,detail,back)
     assert rows[selected][2], 'Unexpected disabled action'
@@ -44,6 +49,8 @@ def choose(self,title,rows,detail='',selected=0,back='Zurueck'):
 
 
 def check(self,op,a,b):
+    global active_backend,audio_after_load
+    active_backend=self
     self.now()
     if op==0 and isinstance(a,str) and '.s05' in a:
         reads.append(a)
@@ -54,15 +61,22 @@ def check(self,op,a,b):
             steps.extend((1,4))  # actual shared menu -> save -> slot5
             self.pause_menu()
             stages.append('save requested')
+            if self.audio: print('Audio after save:', self.audio.suspended, self.audio.blocks)
         elif len(stages)==1 and self.elapsed>=16000 and caps&2:
             filename=ROOT+'/presto-'+('monkey-vga-de' if PROFILE==1 else 'monkey2-de')+'.s05'
             assert os.stat(filename)[6]>1000,'Save missing/incomplete'
             steps.extend((2,4))  # actual shared menu -> load -> slot5
             self.pause_menu()
             stages.append('load requested')
+            if self.audio:
+                audio_after_load=self.audio.blocks
+                print('Audio after load:', self.audio.suspended, self.audio.blocks)
     result=original_call(self,op,a,b)
     if op==103 and result and result[0]==10:
         assert len(stages)==2 and reads, 'Save/load not completed'
+        if self.audio:
+            print('Audio at quit:', self.audio.suspended, self.audio.blocks)
+            assert not self.audio.suspended and self.audio.blocks>audio_after_load+2, 'Audio did not resume after save/load'
     return result
 
 FileSession.__init__=init
@@ -73,7 +87,7 @@ GameUI.release=lambda self:None
 Backend.__call__=check
 try:
     path='/sd/scumm/monkey-vga-de' if PROFILE==1 else '/sd/scumm/monkey2-de'
-    assert run(path=path,profile=PROFILE,duration=25)==0
+    assert run(path=path,profile=PROFILE,duration=40)==0
     print('PASS SCUMM slots/menu',PROFILE,stages,'loaded files',len(reads))
 finally:
     Backend.__call__=original_call

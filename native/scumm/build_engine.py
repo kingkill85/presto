@@ -26,7 +26,7 @@ def main():
     build.mkdir(parents=True, exist_ok=True)
     cross = os.environ.get('CROSS_COMPILE', 'arm-none-eabi-')
     arch = ['-mcpu=cortex-m4', '-mthumb', '-mfpu=fpv4-sp-d16', '-mfloat-abi=hard']
-    flags = [*arch, '-Os', '-fPIC', '-ffunction-sections', '-fdata-sections',
+    flags = [*arch, '-O2', '-fPIC', '-ffunction-sections', '-fdata-sections',
              '-fno-exceptions', '-fno-rtti', '-fno-threadsafe-statics',
              '-fno-tree-loop-distribute-patterns', '-fno-builtin-malloc',
              '-fno-builtin-calloc', '-fno-builtin-realloc', '-fno-builtin-free',
@@ -46,13 +46,31 @@ def main():
                              'src/backends/fs/rp2350/rp2350-fs.cpp')]
     system = (root/'src/backends/platform/rp2350/rp2350-system.cpp').read_text()
     system = system.replace('#include "hardware/irq.h"', '').replace('#include "hardware/dma.h"', '')
-    # Audio is disabled and engine code runs on one core. Never touch Presto's
+    # Mixing is cooperative on the engine core. Never touch Presto's
     # DMA interrupts: its display driver owns them.
     system = system.replace('irq_is_enabled(DMA_IRQ_1)', 'false')
     system = system.replace('irq_set_enabled(DMA_IRQ_1, false);', '(void)0;')
     system = system.replace('irq_set_enabled(DMA_IRQ_1, true);', '(void)0;')
     system = system.replace('"/quest/saves"', '"/sd/scumm/saves"')
     system = re.sub(r'^\s*printf\("setMouseCursor[^\n]+\n', '\n', system, flags=re.M)
+    system = system.replace('Audio::MixerImpl(this, 44100)', 'Audio::MixerImpl(this, 22050)')
+    system += '\nextern "C" void scumm_audio_mix(unsigned char *p, int n) { if (g_mixer) g_mixer->mixCallback(p,n); else memset(p,0,n); }\n'
+    system = system.replace('void OSystem_RP2350::updateScreen() {', 'void OSystem_RP2350::updateScreen() {\n scumm_host_call(104,0,0);')
+    system = 'extern "C" long scumm_host_call(int,long,long);\n' + system
+    # Mixing consumes wall-clock time too. Subtract it from the deadline,
+    # rather than adding it to every requested delay and slowing the game.
+    system = system.replace('\tcabal_delay(msecs);', r"""
+    unsigned start = cabal_get_millis();
+    while (msecs) {
+        scumm_host_call(104, 0, 0);
+        unsigned elapsed = cabal_get_millis() - start;
+        if (elapsed >= msecs) break;
+        unsigned n = msecs - elapsed;
+        cabal_delay(n > 5 ? 5 : n);
+        if (_timerManager)
+            static_cast<DefaultTimerManager *>(_timerManager)->handler();
+    }
+""")
     (build/'system.cpp').write_text(system)
     subprocess.run([sys.executable,str(here/'prepare_fs.py'),
                     str(root/'src/backends/fs/rp2350/rp2350-fs.cpp'),str(build/'fs.cpp')],check=True)
@@ -80,7 +98,7 @@ def main():
     allocator = here/'build/dlmalloc.o'
     if not allocator.exists(): raise SystemExit('Build the runtime probe first (make).')
     platform = build/'platform.o'
-    subprocess.run([cross+'gcc',*arch,'-Os','-fPIC','-ffunction-sections','-fdata-sections',
+    subprocess.run([cross+'gcc',*arch,'-O2','-fPIC','-ffunction-sections','-fdata-sections',
                     '-fno-tree-loop-distribute-patterns','-I'+str(root/'src'),
                     '-c',str(here/'engine_platform.c'),'-o',str(platform)],check=True)
     libs = [subprocess.check_output([cross+'gcc',*arch,'-print-file-name='+name],text=True).strip()
@@ -89,7 +107,7 @@ def main():
              'printf','puts','fflush','exit','_exit','remove','abort']
     core = build/'core.o'
     subprocess.run([cross+'ld','-r','--gc-sections','-u','scumm_engine_run',
-                    '-u','cabal_update_screen','-u','scumm_engine_state',
+                    '-u','scumm_audio_mix','-u','cabal_update_screen','-u','scumm_engine_state',
                     *[arg for name in ('create_mspace_with_base','destroy_mspace','mspace_malloc',
                         'mspace_calloc','mspace_realloc','mspace_free') for arg in ('-u',name)],
                     '-o',str(core),

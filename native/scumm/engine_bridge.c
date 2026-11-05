@@ -10,12 +10,15 @@
 mp_obj_t scumm_callback;
 bool scumm_used;
 extern uint16_t *scumm_framebuffer;
-extern bool scumm_zoom, scumm_zoom_dirty;
+extern bool scumm_zoom, scumm_zoom_dirty, scumm_indexed;
 extern int scumm_engine_run(const char *path,int profile);
 void scumm_runtime_fail(const char *message) { mp_raise_msg(&mp_type_RuntimeError, message); }
 static mp_obj_t host(int op, mp_obj_t a, mp_obj_t b) {
     mp_obj_t args[] = {mp_obj_new_int(op), a, b};
     return mp_call_function_n_kw(scumm_callback,3,0,args);
+}
+void scumm_host_palette(const uint8_t *rgb) {
+    host(106,mp_obj_new_bytearray_by_ref(768,(void *)rgb),mp_const_none);
 }
 long scumm_host_call(int op, long a, long b) {
     return mp_obj_get_int(host(op,mp_obj_new_int(a),mp_obj_new_int(b)));
@@ -94,7 +97,8 @@ static mp_obj_t run(size_t n,const mp_obj_t *args) {
     mp_buffer_info_t arena,fb;
     mp_get_buffer_raise(args[0],&arena,MP_BUFFER_WRITE);
     mp_get_buffer_raise(args[2],&fb,MP_BUFFER_WRITE);
-    if (fb.len != 480*480*2) mp_raise_ValueError("SCUMM needs a 480x480 RGB565 framebuffer");
+    scumm_indexed = fb.len == 480*480;
+    if (!scumm_indexed && fb.len != 480*480*2) mp_raise_ValueError("SCUMM needs a 480x480 RGB565 or indexed framebuffer");
     const char *path=mp_obj_str_get_str(args[3]);
     (void)n;
     int profile=mp_obj_get_int(args[4]);
@@ -122,11 +126,31 @@ static mp_obj_t state(mp_obj_t op, mp_obj_t slot) {
     return mp_obj_new_int(scumm_engine_state(mp_obj_get_int(op), mp_obj_get_int(slot)));
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(state_obj, state);
+extern void scumm_audio_mix(unsigned char *p, int n);
+static mp_obj_t audio(mp_obj_t out, mp_obj_t top_obj, mp_obj_t vol_obj) {
+    mp_buffer_info_t b; mp_get_buffer_raise(out,&b,MP_BUFFER_WRITE);
+    if (b.len != 4096 || ((uintptr_t)b.buf & 3)) mp_raise_ValueError("Audio buffer");
+    int top=mp_obj_get_int(top_obj), vol=mp_obj_get_int(vol_obj);
+    if (top<1 || top>65535 || vol<0 || vol>100) mp_raise_ValueError("Audio range");
+    scumm_audio_mix(b.buf,b.len);
+    uint32_t *p=b.buf;
+    for (int i=0;i<1024;++i) {
+        uint32_t stereo=p[i];
+        int sample=((int)(int16_t)stereo+(int16_t)(stereo>>16))/2;
+        int duty=top/2 + ((sample*vol/100)*top/65536);
+        p[i]=(uint32_t)duty<<16;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_3(audio_obj,audio);
 mp_obj_t mpy_init(mp_obj_fun_bc_t *self,size_t n_args,size_t n_kw,mp_obj_t *args) {
     MP_DYNRUNTIME_INIT_ENTRY
     mp_store_global(MP_QSTR_run,MP_OBJ_FROM_PTR(&run_obj));
     mp_store_global(MP_QSTR_close,MP_OBJ_FROM_PTR(&close_obj));
     mp_store_global(MP_QSTR_zoom,MP_OBJ_FROM_PTR(&zoom_obj));
     mp_store_global(MP_QSTR_state,MP_OBJ_FROM_PTR(&state_obj));
+    mp_store_global(MP_QSTR_audio,MP_OBJ_FROM_PTR(&audio_obj));
+    mp_store_global(MP_QSTR_audio_samples,mp_obj_new_int(1024));
+    mp_store_global(MP_QSTR_audio_rate,mp_obj_new_int(22050));
     MP_DYNRUNTIME_INIT_EXIT
 }

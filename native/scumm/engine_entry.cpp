@@ -45,14 +45,14 @@ extern "C" int scumm_engine_run(const char *path, int profile) {
     ConfMan.set("path", path);
     const char *false_keys[] = {"confirm_exit", "enable_unsupported_game_warning",
         "native_mt32", "enable_gs", "multi_midi", "aspect_ratio", "fullscreen",
-        "filtering", "copy_protection", "dump_scripts", "demo_mode", "nosubtitles"};
+        "filtering", "copy_protection", "dump_scripts", "demo_mode", "nosubtitles", "mute", "music_mute", "sfx_mute"};
     for (auto key : false_keys) ConfMan.setBool(key, false);
-    const char *true_keys[] = {"mute", "music_mute", "sfx_mute", "speech_mute",
+    const char *true_keys[] = {"speech_mute",
         "subtitles", "object_labels"};
     for (auto key : true_keys) ConfMan.setBool(key, true);
     ConfMan.setInt("autosave_period", 0);
-    ConfMan.setInt("music_volume", 0);
-    ConfMan.setInt("sfx_volume", 0);
+    ConfMan.setInt("music_volume", 192);
+    ConfMan.setInt("sfx_volume", 192);
     ConfMan.setInt("speech_volume", 0);
     ConfMan.setInt("talkspeed", 60);
     ConfMan.setInt("midi_gain", 100);
@@ -62,7 +62,7 @@ extern "C" int scumm_engine_run(const char *path, int profile) {
     ConfMan.setInt("save_slot", -1);
     ConfMan.setInt("dimuse_tempo", 10);
     ConfMan.setInt("tempo", 0);
-    ConfMan.set("music_driver", "null");
+    ConfMan.set("music_driver", "adlib");
     ConfMan.set("gm_device", "null");
     ConfMan.set("mt32_device", "null");
     ConfMan.set("language", "de");

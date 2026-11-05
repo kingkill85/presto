@@ -33,10 +33,10 @@ Full-engine port additions:
   outside that checkout and preserve all source license headers.
 - The OSystem build copy removes Pico SDK IRQ/DMA includes and IRQ masking.
   No audio IRQs are installed; the engine runs on a single core. Presto's
-  display DMA is left to the existing firmware. The default save path changes
+  display DMA ownership remains with the existing firmware. The default save path changes
   from /quest/saves to /sd/scumm/saves; noisy cursor logging is removed.
 - engine_platform.c replaces the upstream PS/2/HDMI/audio platform. It presents
-  RGB565 through MicroPython's Presto framebuffer, with exact 1x or optional
+  RGB565 diagnostics or indexed P8 through Presto SRAM, with exact 1x or optional
   1.5x nearest-neighbour output and matching cursor scaling.
 - engine_bridge.c and scumm_backend.py provide timers, touch/gamepad events,
   file/directory access and write access restricted to the saves directory.
@@ -51,8 +51,8 @@ Full-engine port additions:
   respective licenses (including GCC Runtime Library Exception) when
   distributing generated binaries. malloc/free and reentrant variants are
   redirected into the fixed arena; OS/system allocation is unavailable.
-- Audio and the generic ScummVM GUI/save menu remain disabled. The initial
-  target is the official PLAYFATE DOS demo, not arbitrary game detection.
+- The generic ScummVM GUI/save menu remains disabled; only the explicit game
+  profiles below are exposed, not arbitrary game detection.
 
 German Monkey Island VGA profile:
 - Uses the existing ScummEngine_v4, GID_MONKEY_VGA, kGenRoomNum, %03d.LFL,
@@ -88,3 +88,19 @@ Shared menu update: exports state(op,slot), querying save/load availability and
 requesting engine-native slots 1-5. Requests are applied by the normal SCUMM loop
 after the Python menu returns. Generic ScummVM GUI remains disabled. Save-file
 writes now stage and replace atomically through the Python filesystem bridge.
+
+AdLib audio (2026-11-04):
+- Explicit AdLib selection, unmuted music/effects, 22050 Hz mixer. The generated
+  OSystem exposes a cooperative mix callback and pumps audio at screen updates
+  and bounded delays; mixing time is included in each wall-clock deadline.
+- O2 engine/platform compilation and packed indexed rows reduce output cost.
+- audio() exports 1024 mono PWM words after stereo mixing; Python repeats each
+  sample twice for 44100 Hz output, measures peak headroom and applies volume.
+- scumm_audio.Display uses the fixed SRAM front/back layout from Pimoroni Presto
+  firmware v1.0.0 commit 4026e1541514958f34e5c6e44b6815c7e6a22135:
+  modules/c/presto/presto.cpp, Presto_get_framebuffer. The front is scanout and
+  the unused P8 backbuffer owns audio. No firmware code or DMA IRQ is patched.
+  While audio is active, the four checked display DMA channels receive high
+  priority through AL1_CTRL; previous priorities are restored on pause/exit.
+- Two finite audio DMA channels are claimed through rp2.DMA and explicitly
+  aborted before release. Mixer calls are not made from an interrupt.

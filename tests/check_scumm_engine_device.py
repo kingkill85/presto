@@ -30,9 +30,21 @@ def check(self, op, a, b):
         if 'CAPTURE_PATH' in globals():
             fb = memoryview(self.presto.display)
             with open(CAPTURE_PATH, 'wb') as stream:
-                for offset in range(0, len(fb), 4096):
-                    self.watchdog.feed()
-                    stream.write(fb[offset:offset+4096])
+                if hasattr(self.presto, 'palette_rgb'):
+                    rgb = self.presto.palette_rgb
+                    colours = [((rgb[i]&248)<<8) | ((rgb[i+1]&252)<<3) | (rgb[i+2]>>3)
+                               for i in range(0,768,3)]
+                    row = bytearray(960)
+                    for y in range(480):
+                        self.watchdog.feed()
+                        for x in range(480):
+                            colour = colours[fb[y*480+x]]
+                            row[x*2], row[x*2+1] = colour>>8, colour&255
+                        stream.write(row)
+                else:
+                    for offset in range(0, len(fb), 4096):
+                        self.watchdog.feed()
+                        stream.write(fb[offset:offset+4096])
     return result
 
 

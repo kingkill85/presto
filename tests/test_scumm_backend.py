@@ -108,6 +108,92 @@ class InputTests(unittest.TestCase):
         self.touch = SimpleNamespace(state=False, x=0, y=0, poll=lambda: None)
         self.backend = backend_module.Backend(SimpleNamespace(touch=self.touch), zoom=False)
 
+    def test_deferred_save_write_pauses_audio_until_file_close(self):
+        audio = SimpleNamespace(suspended=False)
+        audio.pause = lambda: setattr(audio, 'suspended', True)
+        self.backend.audio = audio
+        class Files:
+            def __init__(self):self.writes={}
+            def __call__(self, op, a, b):
+                if op==10:self.writes[1]='save'
+                if op==1:self.writes.clear()
+                return 1
+        self.backend.files=Files()
+        self.backend(10,'save',None)
+        self.assertTrue(audio.suspended)
+        self.backend(11,1,b'data')
+        self.assertTrue(audio.suspended)
+        self.backend(1,1,None)
+        self.assertFalse(audio.suspended)
+        audio.suspended=True  # saving while the menu still owns the pause
+        self.backend(10,'save',None)
+        self.backend(1,1,None)
+        self.assertTrue(audio.suspended)
+
+    def test_save_write_uses_boot_clock_and_menu_save_keeps_it(self):
+        events = []
+        clock = SimpleNamespace(active=True)
+        def pause():
+            clock.active = False
+            events.append('boot')
+        def resume():
+            clock.active = True
+            events.append('turbo')
+        clock.pause, clock.resume = pause, resume
+        self.backend.clock = clock
+        class Files:
+            def __init__(self):self.writes={}
+            def __call__(self, op, a, b):
+                if op==10:self.writes[1]='save'
+                if op==11:events.append('write at '+('turbo' if clock.active else 'boot'))
+                if op==1:self.writes.clear()
+                return 1
+        self.backend.files=Files()
+        self.backend(10,'save',None)
+        self.backend(11,1,b'data')
+        self.backend(1,1,None)
+        self.assertEqual(events, ['boot', 'write at boot', 'turbo'])
+        clock.active = False  # menu save: the menu already chose the boot clock
+        events.clear()
+        self.backend(10,'save',None)
+        self.backend(1,1,None)
+        self.assertFalse(clock.active)
+        self.assertNotIn('turbo', events)
+
+    def test_menu_silences_audio_restores_palette_and_resumes_only_on_continue(self):
+        for action in ('resume', 'saved', 'loaded', 'exit', 'restart', 'error'):
+            with self.subTest(action=action):
+                audio = SimpleNamespace(suspended=False, volume=60)
+                audio.pause = lambda: setattr(audio, 'suspended', True)
+                self.backend.audio = audio
+                self.backend.path = '/game'
+                picture = bytearray(b'pixels')
+                shown = []
+                self.backend.presto.display = picture
+                self.backend.presto.palette_dirty = False
+                def update():
+                    self.assertTrue(audio.suspended)
+                    self.assertTrue(self.backend.presto.palette_dirty)
+                    self.assertEqual(picture, b'pixels')
+                    shown.append(True)
+                self.backend.presto.update = update
+                def menu(title, zoom, slots, set_zoom, supplied_audio, set_volume):
+                    self.assertTrue(audio.suspended)
+                    self.assertIs(supplied_audio, audio)
+                    picture[:] = b'menu!!'
+                    if action == 'error':
+                        raise RuntimeError('menu failed')
+                    return action, zoom
+                self.backend.ui = SimpleNamespace(pause=menu)
+                with patch.dict('sys.modules', {'game_ui': SimpleNamespace(GameUI=object)}):
+                    if action == 'error':
+                        with self.assertRaisesRegex(RuntimeError, 'menu failed'):
+                            self.backend.pause_menu()
+                    else:
+                        self.backend.pause_menu()
+                self.assertTrue(shown)
+                self.assertEqual(audio.suspended, action not in ('resume', 'saved', 'loaded'))
+
     def test_zoom_touch_coordinates_without_select_toggle(self):
         changed=[]
         self.backend.zoom_fn=changed.append
