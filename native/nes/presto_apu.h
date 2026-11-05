@@ -8,12 +8,18 @@
 
 #define AUDIO_SAMPLES 367                 // per 16639 us frame: 22056 Hz
 #define AUDIO_RATE 22056
-#define APU_FRAME_LINES 262
+#define APU_FRAME_LINES 263               // InfoNES scanlines 0..262
+#define APU_LINES APU_FRAME_LINES
 // Real NTSC frame length. InfoNES runs 262 x 113 = 29606 cycles per frame;
 // timing the APU with those would play every note ~0.6% (10 cents) flat.
 #define APU_FRAME_CYCLES 29781
 #define APU_VSYNC_LINE 243                // SCAN_VBLANK_START
 #define APU_EVENTS 1024
+// DMC sample bytes are fetched at render time; the adapter can supply the
+// memory as it was mapped at that point of the frame (cycle 0..29780).
+#ifndef APU_DMC_READ
+#define APU_DMC_READ(addr, cycle) K6502_Read(addr)
+#endif
 
 static const uint8_t apu_length[32] = {10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
                                        12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30};
@@ -55,16 +61,24 @@ struct ApuNoise apu_n;
 struct ApuDmc apu_d;
 struct ApuEvent apu_events[APU_EVENTS];
 unsigned apu_event_count;
-int16_t apu_pulse_mix[31];
-int16_t apu_tnd_mix[203];
-int32_t apu_hp_in, apu_hp_out;            // DC blocker (the DAC output is unipolar)
+// int32: loud triangle/noise/DMC mixes exceed 32767 (an int16 table wrapped
+// them negative: a full-scale click on SMB3's drum hits).
+int32_t apu_pulse_mix[31];
+int32_t apu_tnd_mix[203];
+// The console's output filters (nesdev): first-order high-passes at 90 Hz
+// and 440 Hz (the 14 kHz low-pass lies above Nyquist). Without the 440 Hz
+// stage DMC kicks and level jumps thump hard and eat the headroom.
+int32_t apu_hp_in, apu_hp_out, apu_hp2_out;
+#define APU_HP90 31949                    // Q15: 1 / (1 + 2 pi 90 / 22056)
+#define APU_HP440 29127                   // Q15: 1 / (1 + 2 pi 440 / 22056)
 int16_t apu_out[AUDIO_SAMPLES];
 
 static void apu_tables(void) {
-    // pulse: 95.52 / (8128/n + 100); tnd: 163.67 / (24329/n + 100), scaled to ~48000
+    // pulse: 95.52 / (8128/n + 100); tnd: 163.67 / (24329/n + 100). Full scale
+    // 96000: after the output high-passes SMB3 peaks near 22000 of 32767.
     apu_pulse_mix[0] = apu_tnd_mix[0] = 0;
-    for (int n = 1; n < 31; n++) apu_pulse_mix[n] = (int16_t)(48000.0f * 0.9552f / (81.28f / n + 1.0f));
-    for (int n = 1; n < 203; n++) apu_tnd_mix[n] = (int16_t)(48000.0f * 1.6367f / (243.29f / n + 1.0f));
+    for (int n = 1; n < 31; n++) apu_pulse_mix[n] = (int32_t)(96000.0f * 0.9552f / (81.28f / n + 1.0f));
+    for (int n = 1; n < 203; n++) apu_tnd_mix[n] = (int32_t)(96000.0f * 1.6367f / (243.29f / n + 1.0f));
 }
 
 static void apu_reset(void) {
@@ -83,7 +97,7 @@ static void apu_reset(void) {
     // The idle triangle holds step 0 (level 15): start the DC blocker on that
     // level, otherwise every reset/state load begins with a thump.
     apu_hp_in = apu_tnd_mix[3 * 15];
-    apu_hp_out = 0;
+    apu_hp_out = apu_hp2_out = 0;
 }
 
 // Called from the CPU write handlers ($4000-$4013, $4015, $4017).
@@ -245,11 +259,11 @@ static int apu_noise_run(int n) {
     }
     return sum;
 }
-static int apu_dmc_run(int n) {
+static int apu_dmc_run(int n, unsigned cycle) {
     int sum = 0;
     while (n) {
         if (!apu_d.buffered && apu_d.remaining) {
-            apu_d.buffer = K6502_Read(apu_d.address);
+            apu_d.buffer = APU_DMC_READ(apu_d.address, cycle);
             apu_d.buffered = 1;
             apu_d.address = apu_d.address == 0xffff ? 0x8000 : apu_d.address + 1;
             if (!--apu_d.remaining && apu_d.loop) {
@@ -302,17 +316,19 @@ static void apu_frame(void) {
         pos = end;
         if (n <= 0) { apu_out[i] = i ? apu_out[i - 1] : 0; continue; }
         int p1 = apu_pulse_run(&apu_p[0], n), p2 = apu_pulse_run(&apu_p[1], n);
-        int tr = apu_triangle_run(n), no = apu_noise_run(n), dm = apu_dmc_run(n);
+        int tr = apu_triangle_run(n), no = apu_noise_run(n), dm = apu_dmc_run(n, t_end);
         int pulse = (p1 + p2 + n / 2) / n;
         int tnd = (3 * tr + 2 * no + dm + n / 2) / n;
         if (pulse > 30) pulse = 30;
         if (tnd > 202) tnd = 202;
         int x = apu_pulse_mix[pulse] + apu_tnd_mix[tnd];
-        // DC blocker: y = x - x' + 0.996 y' (division rounds toward zero; a
-        // shift would floor negative values and leave a constant offset)
-        apu_hp_out = x - apu_hp_in + apu_hp_out * 255 / 256;
+        // y = a (y' + x - x'), twice (division rounds toward zero; a shift
+        // would floor negative values and leave a constant offset)
+        int32_t h1 = (int32_t)(((int64_t)(apu_hp_out + x - apu_hp_in) * APU_HP90) / 32768);
+        apu_hp2_out = (int32_t)(((int64_t)(apu_hp2_out + h1 - apu_hp_out) * APU_HP440) / 32768);
+        apu_hp_out = h1;
         apu_hp_in = x;
-        int y = apu_hp_out;
+        int y = apu_hp2_out;
         apu_out[i] = (int16_t)(y > 32767 ? 32767 : y < -32767 ? -32767 : y);
     }
     while (e < apu_event_count) {         // writes after the last sample edge

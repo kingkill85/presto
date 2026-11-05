@@ -125,6 +125,14 @@ int main(void) {
     frames(3);
     CHECK(peak(AUDIO_SAMPLES, 2 * AUDIO_SAMPLES) < 50, "period < 8 is muted");
 
+    // Mixer tables never wrap: loud triangle + noise + DMC stays positive
+    // and monotonic (an int16 table turned SMB3's drum hits into clicks).
+    apu_reset();
+    for (int n = 1; n < 203; n++)
+        CHECK(apu_tnd_mix[n] > apu_tnd_mix[n - 1], "tnd mix monotonic at %d (%d)", n, (int)apu_tnd_mix[n]);
+    for (int n = 1; n < 31; n++)
+        CHECK(apu_pulse_mix[n] > apu_pulse_mix[n - 1], "pulse mix monotonic at %d", n);
+
     puts(failures ? "FAILED" : "PASS NES APU");
     return failures != 0;
 }

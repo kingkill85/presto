@@ -6,7 +6,18 @@ static void retro_nes_line(int y, const uint16_t *src);
 #include "vendor/InfoNES_Mapper.c"
 #include "vendor/K6502.c"
 #include "palette.h"
+// DMC samples are read when they play, from the PRG banks mapped at that
+// scanline (the console fetches them in real time; reading all of a frame's
+// bytes at vsync differed for ~0.2% of SMB3's DMC bytes).
+static BYTE nes_dmc_read(uint16_t addr, unsigned cycle);
+#define APU_DMC_READ(addr, cycle) nes_dmc_read(addr, cycle)
 #include "presto_apu.h"
+BYTE *apu_line_banks[APU_LINES][4];
+static BYTE nes_dmc_read(uint16_t addr, unsigned cycle) {
+    unsigned line = (cycle * APU_FRAME_LINES / APU_FRAME_CYCLES + APU_VSYNC_LINE + 1) % APU_FRAME_LINES;
+    BYTE *bank = apu_line_banks[line][(addr >> 13) & 3];
+    return bank && addr >= 0x8000 ? bank[addr & 0x1fff] : K6502_Read(addr);
+}
 
 WORD NesPalette[64];
 uint16_t nes_pens[64];
@@ -24,10 +35,15 @@ int ApuQuality;
 static void apu_write(WORD addr, BYTE value) { apu_queue(addr & 0x1f, value); }
 ApuWritefunc pAPUSoundRegs[20];  // filled at init: no pointer relocations in data
 void ApuWriteControl(WORD addr, BYTE value) { apu_queue(0x15, value); }
+// Reset/state load: silent APU and no bank pointers into a previous ROM.
+static void nes_apu_reset(void) {
+    memset(apu_line_banks, 0, sizeof(apu_line_banks));
+    apu_reset();
+}
 void InfoNES_pAPUInit(void) {
     for (int i = 0; i < 20; i++) pAPUSoundRegs[i] = apu_write;
     APU_Mute = 0;
-    apu_reset();
+    nes_apu_reset();
 }
 void InfoNES_pAPUDone(void) {}
 void InfoNES_pAPUVsync(void) { apu_frame(); }
@@ -41,7 +57,11 @@ void InfoNES_PadState(DWORD *a, DWORD *b, DWORD *system) {
 void *InfoNES_MemoryCopy(void *dst, const void *src, int n) { return memcpy(dst, src, n); }
 void *InfoNES_MemorySet(void *dst, int c, int n) { return memset(dst, c, n); }
 void InfoNES_DebugPrint(char *message) {}
-void InfoNES_Wait(void) {}
+// Called once per scanline (after HSync): remember the PRG mapping for DMC.
+void InfoNES_Wait(void) {
+    BYTE **b = apu_line_banks[PPU_Scanline % APU_LINES];
+    b[0] = ROMBANK0; b[1] = ROMBANK1; b[2] = ROMBANK2; b[3] = ROMBANK3;
+}
 void InfoNES_MessageBox(char *message, ...) {}
 void InfoNES_SoundInit(void) {}
 int InfoNES_SoundOpen(int a, int b) { return 0; }

@@ -50,13 +50,19 @@ SMB3 disassembly: https://github.com/captainsouthbird/smb3
   the PPU's v register does: the next scanline shows coarse Y * 8 + fine Y of
   the addressed nametable (upstream had this commented out, since DrawLine
   adds the scanline to the scroll; we subtract it and wrap the nametable).
-  A mid-frame $2005 Y write only reaches t and takes effect next frame. Fixes
-  Kirby's Adventure's title menu (garbage tiles below the logo); SMB1/SMB3
-  frames are unchanged (host comparison of 22 frames).
+  This applies with rendering off too (SMB3 sets its status bar row that
+  way). A mid-frame $2005 Y write only reaches t and takes effect next frame.
+  Fixes Kirby's Adventure's title menu (garbage tiles below the logo); SMB3's
+  status bar now sits one line lower, as the PPU timing implies. Host
+  comparison: SMB1 and SMB3 title/map frames otherwise unchanged.
 - Sound: own 2A03 APU in presto_apu.h (pulses, triangle, noise, DMC, frame
   counter, nonlinear mixer), 367 samples/frame at 22056 Hz via audio(). Upstream
   InfoNES_pAPU is not used (unsigned envelope counters never decay, early
   break on invalid periods). APU state is not saved; a loaded state restarts
-  it silent. Host check: tests/check_nes_apu_host.c.
+  it silent. DMC bytes are read from the PRG banks mapped at the scanline
+  they play (InfoNES_Wait records them per line), as the console fetches
+  them in real time (vsync-time reads differed for ~0.2% of SMB3's bytes).
+  Output filters as on the console: high-passes at 90 Hz and 440 Hz.
+  Host check: tests/check_nes_apu_host.c.
 - 2x output: pens copied per line to the stack, both rows in one pass with
   64-bit stores (~1.8 ms less per drawn frame, identical framebuffer).
