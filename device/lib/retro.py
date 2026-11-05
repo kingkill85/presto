@@ -2,6 +2,7 @@
 # No overlays during gameplay; direct framebuffer and exact integer scaling.
 
 import machine
+import gc
 import os
 import time
 
@@ -10,7 +11,7 @@ from retro_roms import extension, load_core, system_for
 from gamepad import Gamepad
 from game_controls import MenuChord
 from game_ui import GameUI
-from game_storage import StateSlots, zoom_for, store_zoom
+from game_storage import StateSlots, zoom_for, store_zoom, volume_for, store_volume
 from game_launch import launch, take_request
 from presto import Presto
 
@@ -111,22 +112,50 @@ def run(path):
             ram = get_ram()  # live view of native cartridge RAM, not a stale copy
     gbcore.palette(*SHADES)
     save_needed = getattr(gbcore, 'save_needed', None)
+    # Cores without a dirty flag (GB/GBC/NES): autosave only changed RAM. An
+    # unconditional write stops sound and turbo for ~100 ms every 30 s.
+    saved = bytes(ram) if ram is not None and save_needed is None else None
     zoomable = extension(path) in ('.nes', '.sms')
     zoom = zoom_for(path)
-    handheld = system_for(path)[0] in ('GB', 'GBC')
+    system = system_for(path)[0]
+    handheld = system in ('GB', 'GBC')
     scale = (1 if zoom else 2) if handheld else (2 if zoom else 1)
     slots = StateSlots(path, gbcore, rom)
     chord = MenuChord()
     # CPU/video timing always advances at the console's original frame rate.
-    # NES/SMS draw at most every other frame (~30Hz). If drawing overruns
+    # NES draws at most every other frame (~30Hz). GB/GBC/SMS/GG try every
+    # frame since their output got faster; a late frame skips its picture
+    # (never two in a row for handhelds and GG). If drawing overruns
     # the deadline, run CPU-only frames until caught up, preserving game speed.
-    render_every = 2 if zoomable else 1
+    render_every = 2 if system == 'NES' else 1
     frame_no = 0
     next_draw = 0
     clear_game()
     clock = EmulationClock()
-    try:
+    audio = None
+    if hasattr(gbcore, 'audio'):
+        from retro_audio import Audio
+        audio = Audio(gbcore, volume_for(path))
+
+    def set_volume(value):
+        store_volume(path, value)
+        audio.volume = value
+
+    def pause():
+        try:
+            if audio:
+                audio.pause()
+        finally:
+            clock.pause()
+
+    def resume():
+        if audio:
+            gc.collect()  # Reclaim menu/state buffers before starting the audio queue.
         clock.resume()
+        if audio:
+            audio.resume()
+    try:
+        resume()
         next_t = time.ticks_us()
         skip = False
         last_save = time.ticks_ms()
@@ -134,10 +163,10 @@ def run(path):
             now = time.ticks_ms()
             held = pad.poll(now)
             if not pad.connected:
-                clock.pause()
+                pause()
                 save(ram, sav)
                 wait_for_pad()  # no core frames while disconnected; RAM stays alive
-                clock.resume()
+                resume()
                 clear_game()
                 next_t = time.ticks_us()
                 last_save = time.ticks_ms()
@@ -147,11 +176,12 @@ def run(path):
                 continue
             held, menu = chord.poll(held, now)
             if menu:
-                clock.pause()
+                pause()
                 picture = bytearray(fb)
                 try:
                     action, zoom = ui.pause(short_name(path), zoom, slots,
-                                             lambda value: store_zoom(path, value))
+                                             lambda value: store_zoom(path, value),
+                                             audio, set_volume if audio else None)
                 finally:
                     fb[:] = picture
                     del picture
@@ -163,7 +193,7 @@ def run(path):
                     launch('gb.py' if action == 'restart' else 'games.py', request)
                     return
                 clear_game()
-                clock.resume()
+                resume()
                 next_t = time.ticks_us()
                 skip = False
                 frame_no = next_draw = 0
@@ -173,14 +203,28 @@ def run(path):
             if draw:
                 next_draw = frame_no + render_every
             err = gbcore.frame(fb, held & 0xff, 0, 0, draw, scale)
+            waited = audio.frame() if audio else False
             frame_no += 1
             if err:
                 print("emulator error", err)
             if draw:
                 presto.update()
             next_t = time.ticks_add(next_t, frame_us)
-            late = time.ticks_diff(time.ticks_us(), next_t)
-            if late < 0:
+            now_us = time.ticks_us()
+            late = time.ticks_diff(now_us, next_t)
+            if audio and (waited or late < 0):
+                # Sound output paces emulation. Sleeping on this second clock
+                # as well ate the audio buffer (GG: 17 underruns, without: 0).
+                # Having waited for playback means exactly on time: rebase, so
+                # rate differences between the clocks never add up to skips.
+                # Little time left in that wait: drop the next picture before
+                # the sound runs dry (Zelda DX draws ~18 ms frames).
+                if waited:
+                    next_t = now_us
+                    skip = audio.slack_us < frame_us // 3
+                else:
+                    skip = False
+            elif late < 0:
                 time.sleep_us(-late)
                 skip = False
             else:
@@ -189,13 +233,15 @@ def run(path):
                     next_t = time.ticks_us()
             now = time.ticks_ms()
             if ram is not None and time.ticks_diff(now, last_save) > SAVE_EVERY_MS:
-                if save_needed is None or save_needed():
-                    clock.pause()
+                if save_needed() if save_needed else ram != saved:
+                    pause()
                     save(ram, sav)
-                    clock.resume()
+                    resume()
+                    if saved is not None:
+                        saved = bytes(ram)
                 last_save = now
     finally:
-        clock.pause()
+        pause()
 
 
 def main():
@@ -207,6 +253,6 @@ def main():
         return
     try:
         run(path)
-    except (ImportError, ValueError, OSError, MemoryError) as error:
+    except (ImportError, ValueError, OSError, MemoryError, RuntimeError) as error:
         ui.notice('START NICHT MOEGLICH', str(error))
         launch('games.py', request)

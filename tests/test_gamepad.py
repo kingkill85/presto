@@ -243,7 +243,8 @@ class EmulatorInputTests(unittest.TestCase):
         env.update(MenuChord=controls.MenuChord, zoom_for=lambda path:True,
                    store_zoom=lambda path,value:None,
                    StateSlots=lambda *args:None,
-                   system_for=lambda path: ('GB' if path.endswith('.gb') else 'NES',),
+                   system_for=lambda path: ({'gb': 'GB', 'gbc': 'GBC', 'sms': 'SMS', 'gg': 'GG'}
+                                            .get(path.rsplit('.', 1)[-1], 'NES'),),
                    ui=SimpleNamespace(pause=lambda *args:('exit',True)),
                    launch=lambda *args:reset())
         env['extension'] = lambda p: '.' + p.rsplit('.', 1)[-1].lower()
@@ -278,14 +279,45 @@ class EmulatorInputTests(unittest.TestCase):
             env['run']('test.nes')
         self.assertTrue(all(mode == 2 for mode in env['frame_modes']))
 
-    def test_nes_and_sms_keep_all_emulation_steps_but_draw_every_second(self):
-        for suffix in ('.nes', '.sms'):
+    def test_nes_keeps_all_emulation_steps_but_draws_every_second(self):
+        env, frames, _ = self.environment([1, 2, 16, 32, 64, 128], frame_ms=5)
+        env['gbcore'].init = lambda *args: 0
+        with self.assertRaises(StopFrames):
+            env['run']('test.nes')
+        self.assertEqual(frames, [1, 2, 16, 32, 64, 128])
+        self.assertEqual(env['frame_draws'], [True, False, True, False, True, False])
+
+    def test_sms_and_gg_draw_every_frame_when_fast_enough(self):
+        for suffix in ('.sms', '.gg'):
             env, frames, _ = self.environment([1, 2, 16, 32, 64, 128], frame_ms=5)
             env['gbcore'].init = lambda *args: 0
             with self.assertRaises(StopFrames):
                 env['run']('test' + suffix)
             self.assertEqual(frames, [1, 2, 16, 32, 64, 128])
-            self.assertEqual(env['frame_draws'], [True, False, True, False, True, False])
+            self.assertEqual(env['frame_draws'], [True] * 6)
+
+    def gbc_audio_run(self, frame_ms):
+        env, frames, _ = self.environment([1, 2, 16, 32, 64, 128] * 4, frame_ms=frame_ms)
+        mixed = []
+        env['gbcore'].audio = lambda *args: None
+        env['volume_for'] = lambda path: 60
+        env['gc'] = SimpleNamespace(collect=lambda: None)
+        audio = SimpleNamespace(resume=lambda: None, pause=lambda: None,
+                                frame=lambda: mixed.append(1))
+        with patch.dict(sys.modules, {'retro_audio': SimpleNamespace(Audio=lambda *a:audio)}):
+            with self.assertRaises(StopFrames):
+                env['run']('test.gbc')
+        self.assertEqual(frames, [1, 2, 16, 32, 64, 128] * 4)
+        self.assertEqual(len(mixed), 24)  # sound for every emulation step
+        return env['frame_draws']
+
+    def test_gbc_audio_draws_every_frame_when_fast_enough(self):
+        self.assertEqual(self.gbc_audio_run(5), [True] * 24)
+
+    def test_gbc_slow_drawing_never_skips_two_pictures_in_a_row(self):
+        draws = self.gbc_audio_run(lambda draw: 30 if draw else 5)
+        self.assertFalse(any(not a and not b for a, b in zip(draws, draws[1:])))
+        self.assertLess(draws.count(True), 24)
 
     def test_slow_rendering_skips_more_images_to_keep_game_speed(self):
         for suffix in ('.nes', '.sms'):
@@ -337,16 +369,34 @@ class EmulatorInputTests(unittest.TestCase):
         self.assertEqual(saves, ['test.sav'])
         self.assertEqual(frames, [1, 16, 0])
 
-    def test_autosave_uses_normal_clock_and_resumes(self):
+    def autosave_run(self, write_ram):
         env, frames, saves = self.environment([0, 0, 0])
         env['gbcore'].init = lambda rom: 1
-        env['gbcore'].set_ram = lambda ram: None
+        rams = []
+        env['gbcore'].set_ram = rams.append
+        frame = env['gbcore'].frame
+
+        def writing_frame(*args):
+            if write_ram:
+                rams[0][0] = (rams[0][0] + 1) & 0xff  # game writes battery RAM
+            return frame(*args)
+
+        env['gbcore'].frame = writing_frame
         env['SAVE_EVERY_MS'] = 1
         with patch('builtins.open', mock_open(read_data=b'0')):
             with self.assertRaises(StopFrames):
                 env['run']('test.gb')
+        return env, saves
+
+    def test_autosave_uses_normal_clock_and_resumes(self):
+        env, saves = self.autosave_run(True)
         self.assertTrue(saves)
         self.assertEqual(env['cpu_hz'][0], 200000000)
+
+    def test_autosave_skips_unchanged_ram(self):
+        # Every autosave stops sound and turbo; GB/GBC have no dirty flag.
+        env, saves = self.autosave_run(False)
+        self.assertEqual(saves, [])
 
     def test_exception_restores_cpu_clock(self):
         env, frames, _ = self.environment([0])
