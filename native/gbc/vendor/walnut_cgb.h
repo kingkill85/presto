@@ -476,27 +476,26 @@ void __gb_step_cpu_x(struct gb_s *gb);
 # define WALNUT_GB_U8_TO_U16(h,l) ((h) | ((l) << 8))
 #endif
 
-static inline uint16_t bgr555_to_rgb565BE_accurate(uint16_t c)
-{
-	uint16_t r = c & 0x001F;        // bits 4–0
-	uint16_t g = (c >> 5) & 0x001F;        // bits 9–5
-	uint16_t b = (c >> 10) & 0x001F;        // bits 14–10
-
-	g = (g << 1) | (g >> 4);                // 5 → 6-bit expansion
-
-	uint16_t tempRGB565 = (r << 11) | (g << 5) | b;
-    	return (tempRGB565 << 8) | (tempRGB565 >> 8); // swap bytes
-}
-
+/* Presto: CGB LCD colour correction (Gambatte's formula). The original
+ * screen was darker, less saturated and its channels bled into each other;
+ * a linear 555 -> 565 copy looks garish on a modern panel. */
 static inline uint16_t bgr555_to_rgb565_accurate(uint16_t c)
 {
-	uint16_t r = c & 0x001F;        // bits 4–0
-	uint16_t g = (c >> 5) & 0x001F;        // bits 9–5
-	uint16_t b = (c >> 10) & 0x001F;        // bits 14–10
+	uint32_t r = c & 0x001F;        // bits 4–0
+	uint32_t g = (c >> 5) & 0x001F;        // bits 9–5
+	uint32_t b = (c >> 10) & 0x001F;        // bits 14–10
 
-	g = (g << 1) | (g >> 4);                // 5 → 6-bit expansion
+	uint32_t r8 = (r * 13 + g * 2 + b) >> 1;      // 0..248
+	uint32_t g8 = (g * 3 + b) << 1;               // 0..248
+	uint32_t b8 = (r * 3 + g * 2 + b * 11) >> 1;  // 0..248
 
-	return (r << 11) | (g << 5) | b;
+	return (uint16_t)(((r8 >> 3) << 11) | ((g8 >> 2) << 5) | (b8 >> 3));
+}
+
+static inline uint16_t bgr555_to_rgb565BE_accurate(uint16_t c)
+{
+	uint16_t v = bgr555_to_rgb565_accurate(c);
+	return (v << 8) | (v >> 8); // swap bytes
 }
 
 static inline uint16_t bgr555_to_rgb565_fast(uint16_t c)

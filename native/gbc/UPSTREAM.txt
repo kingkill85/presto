@@ -26,3 +26,10 @@ and timer-driven music run too fast relative to host frame pacing. No state
 layout change. tests/test_gb_timing.py exercises HALT/VBlank at DMG speed and
 both CGB CPU speeds; its generated original ROM needs no third-party assets.
 The same correction is applied to all three Walnut CPU execution paths.
+
+CGB colour correction (2026-11-06): bgr555_to_rgb565_accurate (and its BE
+wrapper) in vendor/walnut_cgb.h now apply Gambatte's CGB LCD matrix
+(R=(13r+2g+b)/2, G=2(3g+b), B=(3r+2g+11b)/2, 8-bit result, max 248) instead of
+a linear 5->6 bit copy, so colours look like the darker, less saturated
+original screen. load_state rebuilds fixPalette from the CGB palette RAM, so
+older states are displayed corrected as well; no state layout change.

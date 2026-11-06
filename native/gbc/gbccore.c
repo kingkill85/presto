@@ -213,6 +213,12 @@ static mp_obj_t load_state(mp_obj_t obj) {
     memcpy(&gb, b.buf, sizeof(gb));
     state_bind(&gb, true);
     if (cart_ram_len) memcpy(cart_ram, (uint8_t *)b.buf + sizeof(gb), cart_ram_len);
+    // States carry the converted palette; rebuild it from the CGB palette RAM
+    // so states from before the colour correction show corrected colours too.
+    for (int i = 0; i < 0x20; i++) {
+        gb.cgb.fixPalette[i] = bgr555_to_rgb565_accurate((gb.cgb.BGPalette[2 * i + 1] << 8) | gb.cgb.BGPalette[2 * i]);
+        gb.cgb.fixPalette[0x20 + i] = bgr555_to_rgb565_accurate((gb.cgb.OAMPalette[2 * i + 1] << 8) | gb.cgb.OAMPalette[2 * i]);
+    }
     error = 0;
     return mp_const_none;
 }
