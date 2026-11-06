@@ -297,7 +297,7 @@ class Messy(Actor):
     def stretch(self, t, p):
         """After waking up: yawn, stretch up high, shake the fur."""
         if t < 900:  # yawn
-            p.eyes, p.mouth, p.paws = "closed", 2, ((3, 9), (12, 9))
+            p.eyes, p.mouth, p.paws = "closed", 3, ((3, 9), (12, 9))
         elif t < 2000:  # up on tiptoes, paws up high
             p.eyes, p.jump, p.paws, p.blush = "closed", 6, ((-1, 4), (-1, 5), (16, 4), (16, 5)), True
         elif t < 3100:  # shake

@@ -307,7 +307,7 @@ class Duo:
         if ph == "rush":  # the hamster is faster
             self.fx.append(("seed", sx - S, GROUND - 12))
             a = self.move(m, sx - 8 * S, 5)
-            self.move(c, sx + 4, 2.4)
+            self.move(c, sx + 8 * S - 2 * CS, 2.4)  # arms touching, faces clear
             if not a:
                 self.running(hp)
             self.walking(cp, 120)
@@ -452,15 +452,32 @@ class Duo:
             if t > 900:
                 hp.eyes, hp.blush = "happy", True
             if t > 2200:
+                self.go("toss")
+        elif ph == "toss":  # Messy sends it off again; it glides away off the screen
+            u = min(1.0, t / 1800)
+            x0, y0 = m.x + 16, BASE_Y - 12
+            self.fx.append(("plane", x0 + (-60 - x0) * u, y0 - 40 * u - arc(u, 20)))
+            hp.look = cp.look = -1
+            hp.eyes = cp.eyes = "happy"
+            hp.paws = ((-1, 4), (16, 4)) if t < 300 else ()
+            hp.jump = 6 if t < 300 else 0
+            if t > 2000:
                 self.go("home")
 
     def magic(self, ph, t, hp, cp):
         """A tiny magician's hat produces a suspiciously large seed."""
         m, c = self.m, self.c
-        if ph == "start":
-            self.meet("spell", hp, cp)
+        if ph == "start":  # a little apart: the hat goes between them
+            a = self.move(m, MEET_X - 22, 2.5)
+            b = self.move(c, C_MEET_X + 22, 2.5)
+            if not a:
+                self.walking(hp)
+            if not b:
+                self.walking(cp, 120)
+            if a and b:
+                self.go("spell")
             return
-        sx = 116
+        sx = (m.x + 16 * S + c.x) // 2  # the middle of the gap
         if ph in ("spell", "reveal"):
             self.fx.append(("hat", sx, GROUND - 24))
         if ph == "spell":
@@ -501,7 +518,7 @@ class Duo:
             lead = (t // 700) % 4
             echo = (max(0, t - 250) // 700) % 4
             cp.arms = ((True, False), (False, True), (True, True), (False, False))[lead]
-            hp.paws = (((3, 5),), ((12, 5),), ((3, 5), (12, 5)), ())[echo]
+            hp.paws = (((-1, 4),), ((16, 4),), ((-1, 4), (16, 4)), ())[echo]
             cp.jump = 12 if lead == 2 else 0
             hp.jump = 12 if echo == 2 else 0
             hp.eyes = cp.eyes = "happy"

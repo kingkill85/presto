@@ -112,7 +112,7 @@ pad = Gamepad()
 ambient = AmbientSensor()
 climate = ClimateSensor()
 motion = MotionSensor()
-motion_reaction = MotionReaction()
+motion_reaction = MotionReaction(particles.spawn)
 pages.climate = climate
 scene.climate = climate
 darkness = Darkness()
@@ -205,12 +205,21 @@ def handle_touch(now):
 
 
 def poke(tapped, now):
-    global name_tag
-    if not tapped or director:
+    global name_tag, director
+    if not tapped:
         return
+    if director:
+        if not director.interruptible:  # Guybrush is visiting: just the name
+            name_tag = (messy if tapped[0] < WIDTH // 2 else clawd, time.ticks_add(now, 1800))
+            return
+        director = None  # a tap ends a game or a scene: they react to you instead
+        sound.stop_music()
+        messy.start("idle")
+        clawd.start("idle")
     if tapped[0] < WIDTH // 2:
         name_tag = (messy, time.ticks_add(now, 1800))
         if messy.state == "sleep":
+            wake_up(now)
             messy.start("startle")
         elif messy.state not in ("happy", "startle"):
             messy.start("happy")
@@ -218,8 +227,27 @@ def poke(tapped, now):
                 clawd.start("wave")
     else:
         name_tag = (clawd, time.ticks_add(now, 1800))
+        if clawd.state == "sleep":
+            wake_up(now)
         if clawd.state != "happy":
             clawd.start("happy")
+
+
+AWAKE_MS = 3 * 60 * 1000  # woken up by you (sensor, tap): stay up this long
+awake_until = None
+
+
+def kept_awake(now):
+    return awake_until is not None and time.ticks_diff(awake_until, now) > 0
+
+
+def wake_up(now):
+    """Someone woke them: up they get, and they stay awake for AWAKE_MS."""
+    global awake_until
+    awake_until = time.ticks_add(now, AWAKE_MS)
+    for actor in (messy, clawd):
+        if actor.state == "sleep":
+            actor.start("idle")
 
 
 def next_state(actor, other, now):
@@ -230,11 +258,14 @@ def next_state(actor, other, now):
     if (messy_wanted(now) if actor is messy else clawd_wanted(now)):
         actor.start("idle")  # follow_pipelines / follow_agents take over right after
         return
-    if seasons.bedtime(now):
+    night = seasons.bedtime(now)
+    if night and not kept_awake(now):
         actor.start("sleep")
         return
     name = actor.pick(other.state)
-    if lantern and name in ("ball", "duo"):
+    if (lantern or night) and name in ("ball", "duo"):
+        name = "look"  # no games at night, even when someone woke them
+    if name == "sleep" and kept_awake(now):
         name = "look"
     if name == "ball":
         director = Ball(messy, clawd)
@@ -356,7 +387,8 @@ def pose(now, k):
     # Apply last so directors, blinking and weather cannot hide the reaction.
     if motion_allowed(now):
         motion_reaction.apply(now, motion.tilt, hp, cp,
-                              (messy.state == 'sleep', clawd.state == 'sleep'))
+                              (messy.state == 'sleep', clawd.state == 'sleep'),
+                              ((messy.x + 8 * S, BASE_Y), (clawd.x + 8 * CS, C_BASE_Y)))
     return wear
 
 
@@ -440,7 +472,10 @@ while True:
         lantern = Lantern(now, messy, clawd)
     if lantern and not lantern.update(now, k):
         lantern = None
+    woke = motion_reaction.wake_started
     motion_reaction.update(now, motion_event, motion_allowed(now), motion.tilt)
+    if motion_reaction.wake_started is not None and motion_reaction.wake_started != woke:
+        wake_up(now)  # knocked, shaken or tipped: really awake now
     wear = pose(now, k)
     critters.update(now, k, messy, clawd, cp, seasons.bedtime(now))
     reminder.update(now, k, (isinstance(director, Visit) or lantern is not None))  # not while he's really here

@@ -24,7 +24,6 @@ class GameUI:
             self.text = self.canvas.create_pen(255, 241, 232)
             self.muted = self.canvas.create_pen(131, 118, 156)
             self.accent = self.canvas.create_pen(255, 163, 0)
-            self.leaf = self.canvas.create_pen(171, 82, 54)
         return self.canvas
 
     def fit(self, text, width, scale=2):
@@ -46,11 +45,7 @@ class GameUI:
         d.set_pen(self.tile)
         for i in range(14):
             d.rectangle(((i*53+17)%232)//4*8, (40+(i*71)%178)//4*8, 8, 8)
-        # The main pages' chunky garland and shadowed heading.
-        d.set_pen(self.muted); d.rectangle(0, 0, 480, 4)
-        for x in range(4, 480, 32):
-            d.set_pen(self.accent if (x//32)%2 else self.leaf)
-            d.rectangle(x+8, 4, 8, 16); d.rectangle(x, 12, 24, 8)
+        # Shadowed heading; no garland in the game menus.
         d.set_pen(self.accent)
         d.rectangle(24, 43, 40, 24); d.rectangle(32, 35, 16, 8)
         d.set_pen(self.shadow); d.text(self.fit(title, 375, 4), 88, 36, scale=4)

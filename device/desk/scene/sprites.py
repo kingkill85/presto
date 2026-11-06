@@ -73,7 +73,11 @@ def hamster_sprite(eyes, look, step, bob, puff, paws, mouth, blush, seed, ear, s
     if blush:
         put(2, 7 + bob, "p")
         put(13, 7 + bob, "p")
-    if mouth:
+    if mouth == 3:  # wide open: a yawn
+        for c in (7, 8):
+            put(c, 8 + bob, "e")
+            put(c, 9 + bob, "p")
+    elif mouth:
         put(6 + mouth, 8 + bob, "e")
     for r in range(8, 9 + puff) if puff else ():  # full cheeks bulge out
         put(-1, r + bob, "#")
@@ -102,8 +106,14 @@ def hamster_sprite(eyes, look, step, bob, puff, paws, mouth, blush, seed, ear, s
             put(c, 6 + bob, "e")
         for c in range(6, 10):
             put(c, 5 + bob, "e")
+    # A paw is a pink mitten on a short furry arm, two pixels wide towards the
+    # middle, so it reads as a paw and not as a blush. Holding a seed, they
+    # stay one pixel wide on either side of it.
     for c, r in paws:
-        put(c, r + bob, "p")
+        for cc in (c,) if seed else (c, c + 1) if c < 8 else (c - 1, c):
+            put(cc, r + bob, "p")
+            if (c, r + 1) not in paws and 0 <= r + 1 + bob < 12 and g[r + 1 + bob][cc + 1] in ".o":
+                put(cc, r + 1 + bob, "#")
     # Feet: step 1 lifts the left one, step 2 the right one
     for c in (3, 4):
         put(c, 12 if step == 1 else 13, "p")

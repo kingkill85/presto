@@ -69,8 +69,8 @@ def set_theme(rgb):
     SHADE = pen((r // 2, g // 2, b // 2))
 
 
-# Garlands, 4 px pixel art repeated every 16 px under a string; x takes the
-# colour that alternates along it
+# Garlands, 4 px pixel art repeated every 16 px along the top edge (no
+# string, like the game menus); x takes the colour that alternates along it
 GARLANDS = {
     "spring": ((".x.", "xyx", ".x."), (pen((200, 140, 170)), pen((235, 235, 240))), pen((220, 200, 110))),
     "summer": (("xxx", ".x."), (pen((150, 185, 225)), pen((225, 230, 240))), None),
@@ -90,8 +90,6 @@ def garland_kind(now):
 def draw_garland(now):
     kind = garland_kind(now)
     art, colours, second = GARLANDS[kind]
-    display.set_pen(MUTED)  # the string
-    display.rectangle(0, 0, WIDTH, 2)
     step = (now // 700) if kind == "lights" else 0  # the lights take turns
     for i, bx in enumerate(range(2, WIDTH, 16)):
         rows = art[:ICICLES[i % len(ICICLES)]] if kind == "winter" else art
@@ -100,7 +98,7 @@ def draw_garland(now):
                 if ch == ".":
                     continue
                 display.set_pen(colours[(i + step) % len(colours)] if ch == "x" else second)
-                display.rectangle(bx + c * 4, 2 + r * 4, 4, 4)
+                display.rectangle(bx + c * 4, r * 4, 4, 4)
 
 
 def draw_panel(x, y, w, h, hi=None):

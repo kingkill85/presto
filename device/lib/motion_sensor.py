@@ -52,9 +52,10 @@ class MotionSensor:
                 else:
                     raise OSError('No LSM6DS3TR-C')
                 # BDU + auto-increment, 416 Hz accel for tap detection, 104 Hz gyro.
-                # Latch taps on all axes; single tap, threshold 9/32 full scale.
+                # Latch taps on all axes; single tap, threshold 4/32 full scale (~0.25 g):
+                # a normal knock on the table, not a thump.
                 for reg, value in ((0x12, 0x44), (0x10, 0x60), (0x11, 0x40),
-                                   (0x58, 0x8f), (0x59, 9), (0x5a, 6),
+                                   (0x58, 0x8f), (0x59, 4), (0x5a, 6),
                                    (0x5b, 0), (0x5e, 0x40)):
                     self.bus.writeto_mem(self.address, reg, bytes((value,)))
                 self.connected = True
@@ -97,10 +98,10 @@ class MotionSensor:
             delta = max((self.accel[i]-self.base[i] for i in range(3)), key=abs)
             target = max(-1.0, min(1.0, delta / 0.65)) if abs(delta) > 0.15 else 0.0
             self.tilt += (target-self.tilt) * 0.18
-            shock = strength > 2.7 or spin > 140
+            shock = strength > 2.2 or spin > 120
             event = 0
             if shock:
-                if self.shock_at is not None and time.ticks_diff(now, self.shock_at) < 400:
+                if self.shock_at is not None and time.ticks_diff(now, self.shock_at) < 700:
                     event = SHAKE
                     self.shock_at = None
                 else:

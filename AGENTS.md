@@ -40,8 +40,11 @@ features and setup. This file is the single source of agent instructions;
   devices without blocking. Stale/disconnected data clears reactions. The pose
   overlay in `desk/scene/motion.py` never changes actor states. Motion and lantern
   reactions may accompany every activity, including sleep, work and directors.
-  Sleepers briefly wake visually, then resume sleeping even if tilt is held.
-  Preserve all non-sensor activity/night gates; discard gestures off the scene page.
+  A knock, shake, tilt or tap wakes sleepers for real (`wake_up` in `main.py`):
+  they stay awake for `AWAKE_MS` (3 min), even at night, but without games or
+  visits; then they sleep again. Tilting slides both towards the lower side
+  (drawn through `Pose.dx` only). Preserve all other activity/night gates;
+  discard gestures off the scene page.
 - `device/lib/climate_sensor.py` reads the optional BME280 at 0x76 with forced
   measurements split across frames. Clear missing/invalid values, retry with
   backoff, and include the rounded values in the Home Assistant page's redraw key.
@@ -183,7 +186,8 @@ names, credentials, and tokens out of committed code, examples, and logs.
   start a game. Preserve `next_state` handling.
 - Between 22:00 and 06:00 (`seasons.bedtime`), actors sleep and games, visits,
   and birds stop. Work status can wake the relevant actor; it sleeps again
-  afterward.
+  afterward. You can wake them too (sensors, a tap): they stay up for
+  `AWAKE_MS`, then sleep again.
 - Show Clawd's completion only for `DONE_MS`, restarting for a new completion.
   Show Messy's failed wheel and red pulse only for `BROKEN_MS`, restarting
   on another failure. Herdr's persistent status must not extend these forever.

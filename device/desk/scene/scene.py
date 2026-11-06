@@ -327,6 +327,9 @@ def draw_wheel_rim(cx, shift, broken):
 # Two columns of 8 between the clock and the characters' heads (Clawd's top
 # is at C_BASE_Y); more agents: one icon per status with the number.
 AGENT_ROWS = 8
+# Both icon bars start at the same height: below the weather symbol (a bolt
+# ends at y 39) and the corner temperature, above Clawd's head (y 156).
+ICON_TOP = 40
 AGENT_ICONS = 2 * AGENT_ROWS
 AGENT_PENS = {"working": CLAWD_PEN, "done": TICK_PEN, "blocked": ALERT_PEN}
 
@@ -345,7 +348,7 @@ def draw_agent_bar(now):
     else:
         groups = [(a.get("s"), 1) for a in agents]
     for i, (s, n) in enumerate(groups):
-        x, y = WIDTH - 15 - (i // AGENT_ROWS) * 14, 36 + (i % AGENT_ROWS) * 14
+        x, y = WIDTH - 15 - (i // AGENT_ROWS) * 14, ICON_TOP + (i % AGENT_ROWS) * 14
         if n > 1:
             num = str(n)
             display.set_pen(AGENT_PENS.get(s, IDLE_PEN))  # in the icon's colour
@@ -369,7 +372,7 @@ def draw_pipe_bar(now):
     on the left edge of the scene below the weather symbol, a second column
     right of it when the first is full (herdr keeps 2 * PIPE_ROWS)."""
     for i, (_, s) in enumerate(herdr.recent_pipes):
-        x, y = 6 + (i // PIPE_ROWS) * 14, 46 + (i % PIPE_ROWS) * 14
+        x, y = 6 + (i // PIPE_ROWS) * 14, ICON_TOP + (i % PIPE_ROWS) * 14
         if s == "running":
             draw_art(GEAR_A if (now // 200) % 2 else GEAR_B, x, y, 2, FUR_PEN)
         elif s == "failed":

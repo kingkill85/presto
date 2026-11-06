@@ -136,13 +136,13 @@ class ReactionTests(unittest.TestCase):
         reaction.update(200, 2, True)
         hp, cp = SimpleNamespace(), SimpleNamespace()
         reaction.apply(350, 0, hp, cp)
-        self.assertEqual((hp.dx, cp.dx), (-8, 8))
-        reaction.update(3200, 0, True)
+        self.assertEqual((hp.dx, cp.dx), (-10, 10))
+        reaction.update(6300, 0, True)
         self.assertEqual(reaction.kind, 0)
-        reaction.apply(3300, -0.8, hp, cp)
-        self.assertEqual((hp.dx, cp.dx), (-12, -12))
-        reaction.update(3400, 1, True)
-        reaction.apply(3400, 0, hp, cp)
+        reaction.apply(6400, -0.8, hp, cp)
+        self.assertEqual((hp.dx, cp.dx), (-8, -8))
+        reaction.update(6500, 1, True)
+        reaction.apply(6500, 0, hp, cp)
         self.assertEqual((hp.look, cp.look), (0, 0))
         reaction.update(3500, 0, False)
         self.assertEqual(reaction.kind, 0)
@@ -181,7 +181,7 @@ class ReactionTests(unittest.TestCase):
         reaction.update(0, 0, True, 0.8)
         self.assertTrue(reaction.waking(4000))
         reaction.apply(4000, 0.8, hp, cp, (True, True))
-        self.assertEqual((hp.eyes, cp.eyes), ('open', 'open'))
+        self.assertEqual((hp.eyes, cp.eyes), ('wide', 'wide'))  # awake and leaning
         reaction.update(6100, 0, True, 0.8)
         self.assertFalse(reaction.waking(6100))
         hp.eyes = cp.eyes = 'closed'
@@ -222,18 +222,19 @@ class ReactionTests(unittest.TestCase):
         reaction = self.mod.MotionReaction()
         reaction.update(0, 2, True)
         poses = []
-        for t in (150, 300, 600, 1800, 2600):
+        for t in (150, 300, 600, 1800, 3000, 5900):
             hp, cp = SimpleNamespace(), SimpleNamespace()
             reaction.apply(t, 0, hp, cp)
-            poses.append((hp.dx, hp.jump))
-        self.assertEqual(poses[1][0], -16)
-        self.assertEqual(poses[-1], (0, 0))
-        reaction.update(3000, 0, True)
+            poses.append((hp.dx, getattr(hp, 'jump', 0), hp.eyes))
+        self.assertEqual(poses[1][:2], (-20, 12))  # thrown about
+        self.assertEqual(poses[4][1], 0)  # dizzy on the ground
+        self.assertLessEqual(abs(poses[-1][0]), 2)  # and settling
+        reaction.update(6100, 0, True)
         self.assertEqual(reaction.kind, 0)
-        reaction.update(3100, 1, True)
-        reaction.apply(3800, 0, hp, cp)
+        reaction.update(6200, 1, True)
+        reaction.apply(7100, 0, hp, cp)
         self.assertEqual(hp.look, -1)
-        reaction.apply(4800, 0, hp, cp)
+        reaction.apply(8000, 0, hp, cp)
         self.assertEqual(hp.look, 1)
-        reaction.update(6600, 0, True)
+        reaction.update(11300, 0, True)
         self.assertEqual(reaction.kind, 0)
