@@ -15,7 +15,7 @@ def take_request():
 
 
 def queue(app='games.py', request=None):
-    if app not in ('games.py', 'gb.py', 'scumm.py'):
+    if app not in ('games.py', 'gb.py', 'scumm.py', 'doom.py'):
         raise ValueError('Unknown game runtime')
     with open('/ramfs/game.json', 'w') as f:
         json.dump(request or {}, f)

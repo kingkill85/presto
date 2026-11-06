@@ -11,7 +11,7 @@ from desk.gfx import pen, presto
 
 # Config and helpers in the root, not apps. sdcard.py stays here since the
 # frozen built-in sdcard would shadow it in lib/.
-HIDDEN = ("main.py", "secrets.py", "ha_config.py", "sdcard.py", "gb.py", "scumm.py")
+HIDDEN = ("main.py", "secrets.py", "ha_config.py", "sdcard.py", "gb.py", "scumm.py", "doom.py")
 
 # PICO-8 palette
 P8 = {

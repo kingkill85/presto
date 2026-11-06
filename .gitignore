@@ -21,3 +21,5 @@ native/*/*.mpy
 *.state
 *.state.tmp
 *.state.bak
+*.wad
+*.WAD

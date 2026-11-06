@@ -2,7 +2,7 @@
 from retro_roms import discover, system_for
 
 SYSTEM_NAMES = (('GB','Game Boy'),('GBC','Game Boy Color'),('GG','Game Gear'),
-                ('NES','NES'),('SMS','Master System'),('SCUMM','Adventures'))
+                ('NES','NES'),('SMS','Master System'),('SCUMM','Adventures'),('DOOM','Doom'))
 SCUMM_GAMES = (
     (2, 'Monkey Island 2', '/sd/scumm/monkey2-de', ('monkey2.000','monkey2.001')),
     (1, 'Monkey Island', '/sd/scumm/monkey-vga-de',
@@ -33,6 +33,14 @@ def catalog():
         folders.setdefault(system,[]).append(dict(title=title,path=path,system=system,app='gb.py'))
     for profile,title,path,_ in installed_adventures():
         folders.setdefault('SCUMM',[]).append(dict(title=title,path=path,profile=profile,system='SCUMM',app='scumm.py'))
+    import os
+    for path in ('/sd/doom/doom1.wad', '/sd/doom/DOOM1.WAD'):
+        try:
+            if os.stat(path)[6] == 4196020:
+                folders['DOOM'] = [dict(title='Doom Shareware', path=path, system='DOOM', app='doom.py')]
+                break
+        except OSError:
+            pass
     return [(key,title,folders[key]) for key,title in SYSTEM_NAMES if key in folders]
 
 

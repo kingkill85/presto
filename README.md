@@ -16,13 +16,14 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 | `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
 | `games.py` | Unified game library with virtual system folders; starts only the selected native engine. |
 | `gb.py` | Internal Retro runtime for GB, GBC, Game Gear, NES and Master System. |
+| `doom.py` | Internal experimental Doom 1.9 shareware runtime with music, effects and native saves. |
 | `scumm.py` | Internal experimental SCUMM-v4/v5 runtime for German Monkey Island VGA and Monkey Island 2, with touch/gamepad input and switchable zoom. |
 | `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
 | `ha_config.example.py` | Template for `ha_config.py`: Home Assistant host and which entities to show. |
 | `sdcard.py` | SD card driver from micropython-lib ([PR #765](https://github.com/micropython/micropython-lib/pull/765), MIT). Stays in the root: `.frozen` comes before `/lib` in `sys.path`, so only here does it replace the built-in one, which fails with "timeout waiting for v2 card" ([pimoroni/presto#79](https://github.com/pimoroni/presto/issues/79)). |
 | `secrets.example.py` | Template for `secrets.py` (WiFi and Home Assistant token). |
 
-The app page has one **Spiele** entry for Retro and SCUMM. Bundled Pimoroni demo apps
+The app page has one **Spiele** entry for Retro, SCUMM and Doom. Bundled Pimoroni demo apps
 and their example images/fonts have been removed; the launcher still discovers
 additional root-level Python apps automatically.
 
@@ -95,8 +96,8 @@ page. On the scene, **A / B** greet Messy / Clawd. A border marks the selected
 app or setting while a controller is connected.
 
 The **Spiele** app groups installed games into virtual GB, GBC, Game Gear, NES,
-Master System and Adventures folders. Empty folders are hidden. Selection works
-with touch or the pad; Retro gameplay still requires the pad. Files stay in place.
+Master System, Adventures and Doom folders. Empty folders are hidden. Selection works
+with touch or the pad; Retro and Doom gameplay require the pad. Files stay in place.
 The ROM scanner provides one list for `.gb`, `.gbc`, `.gg`, `.nes`
 and `.sms`. It discovers games recursively in `/roms` and `/sd/roms`, including
 system subfolders. The native core is imported only after choosing a game.
@@ -210,6 +211,25 @@ Only complete installations appear in the selection. Index checksums reject
 other editions instead of guessing the engine/language. Game data are not
 included in git. Build and deployment instructions are in
 [`native/scumm/README.md`](native/scumm/README.md).
+
+## Experimental Doom
+
+**Spiele → Doom → Doom Shareware** runs Doomgeneric on the existing v1.0.0
+firmware. Put the Doom 1.9 shareware IWAD in `/sd/doom/doom1.wad`; only that
+verified edition is supported. Game data are not included in Git.
+
+The image fills **480×360** in the original 4:3 aspect ratio, with correct
+indexed colours and black bars. Music and effects use the piezo. A Qw/ST Pad
+is required: D-pad moves/turns, **A** fires, **B** uses, hold **X** to strafe,
+**Y** cycles weapons. **SELECT + START** opens the shared menu with five native
+save slots, zoom and volume. Disconnecting the pad pauses and automatically
+saves; reconnecting resumes.
+
+This remains experimental: with audio, short hardware samples show roughly
+10–15 displayed fps and occasional audio underruns. Gameplay uses 300 MHz;
+menus, saves and exit restore the boot clock. Build, controls, supported data
+checksum and hardware checks are documented in
+[`native/doom/README.md`](native/doom/README.md).
 
 ## Optional Multi-Sensor Stick
 

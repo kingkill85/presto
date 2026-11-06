@@ -1,0 +1,45 @@
+Doomgeneric: https://github.com/ozkl/doomgeneric
+Revision: e257a09527062bfb986b6e5e0780839b6cbd5b71
+License: GPL-2.0 (see LICENSE and upstream per-file notices).
+
+The build consumes an unmodified checkout at the exact revision above.
+Build-only modifications: 320x200 output; replace the X11 platform with the
+Presto bridge; wrap libc allocation, file I/O, environment and exit functions;
+move initialized data and engine BSS into the writable RAM image supported by
+the MicroPython v1.26.0 native loader (existing SCUMM prepare_data.py).
+
+The adapter uses a Python-owned fixed arena, read-only WAD VFS callbacks,
+sequential RGB565/P8 word stores and Gamepad events. Save I/O is bounded
+in-memory archive I/O; the Python runtime writes checked slots at boot clock.
+Game data is neither included nor downloaded by the build. Reset is required
+between sessions.
+
+emu8950: https://github.com/digital-sound-antiques/emu8950
+Revision: f82a22e80b68820f263084aa8506b12eb1c9b4dd (v1.2.3 source header)
+License: MIT, preserved in vendor/LICENSE.emu8950 and file headers.
+Files: emu8950.c/.h and emuadpcm.c/.h. One modification: replace a
+left shift of a negative signed value in lookup_exp_table with multiplication
+by two (same output, defined C semantics; caught by UBSan).
+Presto performance modifications (2026-11-06):
+- OPL_RATE_DIV (emu8950.h, default 2): each update_output computes two chip
+  samples. Envelopes, timers, LFO and noise still step per chip sample; the
+  phase advances by the sum. The chip runs at 24,858 instead of 49,716 Hz with
+  unchanged pitch and envelope timing (tests/test_doom_sound.py).
+- Released slots at full attenuation (EG_MUTE) without pending updates skip
+  envelope, phase and FM calculation until their next key-on; idle melodic
+  channels output zero. Bit-identical output to the unskipped emulator.
+
+Presto runtime extensions: indexed scanout and palette callbacks; DMX effects
+and MUS event sequencing with GENMIDI instruments; emu8950 YM3812 music;
+cooperative audio generation via the existing SRAM/PWM audio queue; Doom's
+native save archive in bounded memory, with pointer-presence flags instead
+of discarded native pointer values; original load/save/quit menu entries
+route to the shared game menu. Source transformations live in build.py.
+
+Single-player timing preserves pending tics when the command buffer fills;
+CPU-only catch-up frames skip display work when simulation falls behind.
+TryRunTics' wait loop runs a tic as soon as it is built (upstream returned on
+its one-tic timeout without running the tic that had just become ready, and
+the same tic was rendered again); D_Display never renders one tic twice.
+I_VideoBuffer and COLORMAP are placed in an optional on-chip SRAM region
+passed to init (falls back to the zone).
