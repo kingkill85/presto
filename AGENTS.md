@@ -54,6 +54,11 @@ features and setup. This file is the single source of agent instructions;
   Guybrush behind both actors without owning their status. Avoid repeated sensor visits; sensor-triggered lantern visits are allowed during
   sleep and other animations. Keep other bedtime/activity gates and cancel
   the lantern on sensor loss.
+- `device/abstand.py` and `device/gesten.py` visualise the optional VL53L1X
+  (0x29) and APDS-9960 (0x39) via pure-Python drivers in `lib/vl53l1x.py` and
+  `lib/apds9960.py`. The shared bus has a 2 ms per-transfer timeout on the RP2:
+  split long writes/reads (the VL53L1X config block, the gesture FIFO) into
+  chunks. The VL53L1X NAKs while booting after a soft reset.
 - `device/lib/gamepad.py` reads the optional Qw/ST Pad on external I2C
   (GPIO40/41). Desk navigation and Game Boy share it. Keep the desk usable by
   touch without a pad. Game Boy requires a pad, saves and pauses on disconnect,

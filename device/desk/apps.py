@@ -37,6 +37,34 @@ ART = {
         "............",
         "............",
     ),
+    "ruler": (
+        "............",
+        "............",
+        "##.......+..",
+        "#o#.....+++.",
+        "#oo#+++++++.",
+        "#o#.....+++.",
+        "##.......+..",
+        "............",
+        "############",
+        "#o#o#o#o#o##",
+        "############",
+        "............",
+    ),
+    "hand": (
+        "...#.#......",
+        "..#o#o#.#...",
+        "..#o#o##o#..",
+        "..#o#o#o#o#.",
+        "..#oooooo#o#",
+        "#.#ooooooo#.",
+        "#o#ooooooo#.",
+        ".#oooooooo#.",
+        "..#oooooo#..",
+        "...#oooo#...",
+        "+...####...+",
+        ".++......++.",
+    ),
     "unknown": (
         "############",
         "#oooooooooo#",
@@ -56,6 +84,8 @@ ART = {
 # file: (label, icon, "#", "o", "+")
 APPS = {
     "games.py": ("Spiele", "gamepad", "lavender", "white", "pink"),
+    "abstand.py": ("Abstand", "ruler", "blue", "silver", "red"),
+    "gesten.py": ("Gesten", "hand", "brown", "peach", "yellow"),
 }
 DEFAULT = ("unknown", "slate", "yellow", "orange")
 

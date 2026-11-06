@@ -16,6 +16,7 @@ Everything in `device/` goes to the root of the Presto's filesystem.
 | `desk/` | The start screen: Messy, a pixel hamster desk pet, and Clawd (the Claude Code mascot) plus the status pages. `main.py` is the loop, `scene/` the meadow and characters, `data/` Herdr and Home Assistant. See below. |
 | `games.py` | Unified game library with virtual system folders; starts only the selected native engine. |
 | `gb.py` | Internal Retro runtime for GB, GBC, Game Gear, NES and Master System. |
+| `abstand.py`, `gesten.py` | Sensor apps: live distance from a VL53L1X (0x29) and swipe gestures, proximity and colour from an APDS-9960 (0x39). Drivers in `lib/vl53l1x.py` and `lib/apds9960.py`, shared frame in `lib/sensor_app.py`. |
 | `doom.py` | Internal experimental Doom 1.9 shareware runtime with music, effects and native saves. |
 | `scumm.py` | Internal experimental SCUMM-v4/v5 runtime for German Monkey Island VGA and Monkey Island 2, with touch/gamepad input and switchable zoom. |
 | `lib/` | Shared helpers (on `sys.path`): `haclient.py`, a non-blocking Home Assistant REST client (one small step per frame), and `tz.py`, German local time (CET/CEST) from the UTC set by `ntptime`. |
@@ -230,6 +231,21 @@ This remains experimental: with audio, short hardware samples show roughly
 menus, saves and exit restore the boot clock. Build, controls, supported data
 checksum and hardware checks are documented in
 [`native/doom/README.md`](native/doom/README.md).
+
+## Distance and Gesture Apps
+
+**Abstand** shows an optional Adafruit VL53L1X time-of-flight sensor: a beam to
+whatever it sees, the distance and a short history (about 4 cm to 4 m).
+**Gesten** shows an optional Soldered APDS-9960 easyC breakout: the last swipe
+as a big arrow, the four photodiodes, proximity and the measured light colour.
+Both run on the external I2C bus next to the pad and the Multi-Sensor Stick;
+tap the header or press **B** to return. If swipes show the wrong direction,
+flip `FLIP_UD`/`FLIP_LR` in `lib/apds9960.py`.
+
+`hardware/sensor-stand/` holds an OpenSCAD stand for both boards (two parts,
+supportless): a hollow tray hides the cables, the ToF sits between hollow
+cheeks so stiff JST-SH cables can bend down inside. Render with
+`openscad -D 'part="tray"' -o tray.stl sensor_stand.scad` (and `"deck"`).
 
 ## Optional Multi-Sensor Stick
 
