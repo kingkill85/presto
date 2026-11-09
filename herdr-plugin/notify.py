@@ -7,7 +7,8 @@ Presto shows work) and sends it, together with a short
 list of all agents, as a small JSON UDP packet. By default it is broadcast on
 the local network, so the Presto's IP doesn't need to be known. To send to a fixed address instead, put
 "192.168.1.50" (or "host:port") into the file `target` in the plugin's config
-directory (`herdr plugin config-dir presto.clawd`).
+directory (`herdr plugin config-dir presto.clawd`). In WSL2 the broadcast goes
+out through Windows (udp.py).
 """
 
 import json
@@ -15,6 +16,8 @@ import os
 import socket
 import subprocess
 import time
+
+import udp  # same directory
 
 PORT = 47474
 PRIORITY = ("blocked", "working", "done", "idle", "unknown")
@@ -35,24 +38,40 @@ def herdr_json(*args):
     return json.loads(out)["result"]
 
 
-def agent_status():
+def herdr_agents():
+    """The Herdr TUI's agents: [{"workspace", "agent", "title", "status"}]"""
     agents = herdr_json("agent", "list")["agents"]
     try:
         labels = {w["workspace_id"]: w.get("label") or "" for w in herdr_json("workspace", "list")["workspaces"]}
     except Exception:
         labels = {}
+    return [
+        {
+            "workspace": labels.get(a.get("workspace_id"), "") or a.get("workspace_id", ""),
+            "agent": a.get("agent") or "",
+            "title": a.get("terminal_title_stripped") or "",
+            "status": a.get("agent_status", "unknown"),
+        }
+        for a in agents
+    ]
+
+
+def agent_status(agents=None):
+    """The message for the Presto; agents from Herdr unless given (hc.agents)."""
+    if agents is None:
+        agents = herdr_agents()
     listed = [
         {
-            "w": ascii_text(labels.get(a.get("workspace_id"), "") or a.get("workspace_id", ""), 14),
-            "k": ascii_text(a.get("agent") or "", 10),
-            "t": ascii_text(a.get("terminal_title_stripped") or "", 34),
-            "s": a.get("agent_status", "unknown"),
+            "w": ascii_text(a["workspace"], 14),
+            "k": ascii_text(a["agent"], 10),
+            "t": ascii_text(a["title"], 34),
+            "s": a["status"],
         }
         for a in agents[:MAX_LISTED]
     ]
     by_status = {}
     for a in agents:
-        by_status.setdefault(a.get("agent_status", "unknown"), []).append(a)
+        by_status.setdefault(a["status"], []).append(a)
     for status in PRIORITY:
         if status in by_status:
             first = by_status[status][0]
@@ -61,7 +80,7 @@ def agent_status():
                 "status": status,
                 "agents": len(agents),
                 "count": len(by_status[status]),
-                "title": ascii_text(first.get("terminal_title_stripped") or "", 34),
+                "title": ascii_text(first["title"], 34),
                 "list": listed,
             }
     return {"src": SOURCE, "status": "none", "agents": 0, "count": 0, "title": "", "list": []}
@@ -84,12 +103,12 @@ def target():
 
 def main():
     payload = json.dumps(agent_status(), separators=(",", ":")).encode()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock = udp.Sender()
     addr = target()
     for _ in range(3):  # UDP may drop a packet now and then
         sock.sendto(payload, addr)
         time.sleep(0.05)
+    sock.close()
     print(payload.decode())
 
 

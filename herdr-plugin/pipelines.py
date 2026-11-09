@@ -43,6 +43,9 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import quote
 
+import hc  # same directory
+import udp  # same directory
+
 PORT = 47474
 SOURCE = socket.gethostname()[:16]  # the Presto keeps the status of each computer apart
 AGENT_EVERY = 5  # s between status messages (new pipeline data: every --interval)
@@ -50,6 +53,7 @@ MAX_ITEMS = 5  # rows on the Presto's screen
 RECENT_S = 7 * 86400  # my MRs/PRs older than this are left out
 RUNNING = ("running", "pending", "created", "preparing", "waiting_for_resource", "scheduled")
 UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
+FROM = "herdr"  # or "hc", see --source
 DEFAULT_PINNED = []  # set "pinned" in pipelines.json, e.g. a team's develop branch
 
 
@@ -113,30 +117,35 @@ def parse_remote(url):
     return (m.group(1), m.group(2)) if m else (None, None)
 
 
-def active_spaces():
-    """[(space label, host, project, branch)] in sidebar order, one per repo+branch."""
+def herdr_dirs():
+    """[(space label, cwd)] of every Herdr pane, in sidebar order."""
     workspaces = sorted(herdr("workspace", "list")["workspaces"], key=lambda w: w.get("number", 0))
     panes = herdr("pane", "list")["panes"]
+    return [(ws.get("label") or ws["workspace_id"], pane.get("foreground_cwd") or pane.get("cwd"))
+            for ws in workspaces for pane in panes if pane.get("workspace_id") == ws["workspace_id"]]
+
+
+def space_dirs():
+    return hc.spaces(hc.snapshot()) if FROM == "hc" else herdr_dirs()
+
+
+def active_spaces():
+    """[(space label, host, project, branch)] in sidebar order, one per repo+branch."""
     seen, spaces = {}, []
-    for ws in workspaces:
-        for pane in panes:
-            if pane.get("workspace_id") != ws["workspace_id"]:
-                continue
-            cwd = pane.get("foreground_cwd") or pane.get("cwd")
-            if not cwd or not git(cwd, "rev-parse", "--is-inside-work-tree"):
-                continue
-            host, project = parse_remote(git(cwd, "remote", "get-url", "origin"))
-            branch = git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
-            if not host or not branch or branch == "HEAD":
-                continue
-            key = (host, project, branch)
-            label = ws.get("label") or ws["workspace_id"]
-            if key in seen:
-                if label not in seen[key][0]:
-                    seen[key][0].append(label)
-                continue
-            seen[key] = ([label], host, project, branch)
-            spaces.append(seen[key])
+    for label, cwd in space_dirs():
+        if not cwd or not git(cwd, "rev-parse", "--is-inside-work-tree"):
+            continue
+        host, project = parse_remote(git(cwd, "remote", "get-url", "origin"))
+        branch = git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+        if not host or not branch or branch == "HEAD":
+            continue
+        key = (host, project, branch)
+        if key in seen:
+            if label not in seen[key][0]:
+                seen[key][0].append(label)
+            continue
+        seen[key] = ([label], host, project, branch)
+        spaces.append(seen[key])
     return [("+".join(labels), host, project, branch) for labels, host, project, branch in spaces]
 
 
@@ -326,7 +335,10 @@ def collect(pinned):
 
 
 def herdr_alive():
-    """True while the Herdr server's socket accepts connections."""
+    """True while the Herdr server's socket accepts connections (or hc's core
+    answers)."""
+    if FROM == "hc":
+        return hc.available()
     path = os.environ.get("HERDR_SOCKET_PATH")
     if not path:
         return True  # started by hand, outside Herdr
@@ -343,7 +355,8 @@ def agent_payload():
     """The Herdr agent status too, so the Presto catches up after a restart
     without waiting for the next status change."""
     import notify  # same directory
-    return json.dumps(notify.agent_status(), separators=(",", ":")).encode()
+    agents = hc.agents(hc.snapshot()) if FROM == "hc" else None
+    return json.dumps(notify.agent_status(agents), separators=(",", ":")).encode()
 
 
 def day_payload(setting):
@@ -366,9 +379,24 @@ def usage_payload():
 
 def send_agents(sock, target):
     try:
-        sock.sendto(agent_payload(), (target, PORT))
+        payload = agent_payload()
+        sock.sendto(payload, (target, PORT))
+        return payload
     except Exception as e:  # Herdr busy, ...
         print(f"agent status: {e}", flush=True)
+        return None
+
+
+def goodbye(sock, target):
+    """Tell the Presto that nothing is going on any more, so Clawd and Messy
+    don't keep working after Herdr was closed."""
+    for msg in ({"src": SOURCE, "status": "none", "agents": 0, "count": 0, "title": "", "list": []},
+                {"type": "pipelines", "src": SOURCE, "status": "none", "items": []},
+                {"type": "day", "src": SOURCE, "date": None, "note": 0, "events": [], "tasks": []},
+                {"type": "usage", "src": SOURCE}):
+        for _ in range(3):
+            sock.sendto(json.dumps(msg).encode(), (target, PORT))
+            time.sleep(0.05)
 
 
 def main():
@@ -379,28 +407,42 @@ def main():
     ap.add_argument("--daynotes", default="",
                     help="folder of the daily notes inside the Obsidian vault or an absolute path, "
                          "default: found in the vaults; off: don't send")
+    ap.add_argument("--source", choices=("auto", "herdr", "hc"), default="auto",
+                    help="agents and spaces from the Herdr TUI or from herdr-core (hc, the desktop app); "
+                         "auto: Herdr when started by its plugin, else hc if it runs. With hc it keeps "
+                         "running when hc stops (for a service) and starts again with it")
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
     pinned = json.loads(args.pinned) if args.pinned else DEFAULT_PINNED
+    global FROM
+    FROM = args.source
+    if FROM == "auto":
+        FROM = "herdr" if os.environ.get("HERDR_SOCKET_PATH") or not hc.available() else "hc"
+    print(f"agents and spaces from {FROM}", flush=True)
+    watcher = None
+    if FROM == "hc" and not args.once:
+        watcher = hc.Watcher()
+        watcher.start()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock = udp.Sender()  # in WSL2 broadcasts go out through Windows
     misses = 0
     latest = []  # the last pipeline and daily note messages, sent again between the rounds
     while True:
         if not args.once:
             misses = 0 if herdr_alive() else misses + 1
-            if misses >= 3:
-                # tell the Presto that nothing is going on any more, so Clawd
-                # and Messy don't keep working after Herdr was closed
-                for msg in ({"src": SOURCE, "status": "none", "agents": 0, "count": 0, "title": "", "list": []},
-                            {"type": "pipelines", "src": SOURCE, "status": "none", "items": []},
-                            {"type": "day", "src": SOURCE, "date": None, "note": 0, "events": [], "tasks": []},
-                            {"type": "usage", "src": SOURCE}):
-                    for _ in range(3):
-                        sock.sendto(json.dumps(msg).encode(), (args.target, PORT))
-                        time.sleep(0.05)
+            if misses >= 3 and FROM == "hc":
+                # a service: wait for hc to come back instead of exiting
+                goodbye(sock, args.target)
+                print("hc is gone, said goodbye to the Presto, waiting for it", flush=True)
+                latest = []
+                while not hc.available():
+                    time.sleep(10)
+                print("hc is back", flush=True)
+                misses = 0
+            elif misses >= 3:
+                goodbye(sock, args.target)
                 print("herdr is gone, said goodbye to the Presto, exiting", flush=True)
+                sock.close()
                 break
         try:
             payload = json.dumps(collect(pinned), separators=(",", ":")).encode()
@@ -436,20 +478,42 @@ def main():
         except Exception as e:  # Herdr busy, network hiccup, ...
             print(f"error: {e}", flush=True)
         if args.once:
+            sock.close()
             break
         # between the rounds the agent status and the last pipelines and daily
         # note go out again every few seconds, so a Presto that just started
         # knows them quickly
         until = time.time() + args.interval
+        resent = time.time()
+        sent_agents = None
         while time.time() < until:
-            time.sleep(max(0.0, min(AGENT_EVERY, until - time.time())))
-            send_agents(sock, args.target)
+            wait = max(0.0, min(resent + AGENT_EVERY, until) - time.time())
+            if watcher and watcher.changed.wait(wait):
+                # something changed in hc (most often just an agent's progress
+                # message): send the status right away if it is a new one, it
+                # is what makes Clawd react and the Presto beep
+                time.sleep(0.3)  # one change often comes with a few events
+                watcher.changed.clear()
+                try:
+                    payload = agent_payload()
+                    if payload != sent_agents:
+                        for _ in range(2):
+                            sock.sendto(payload, (args.target, PORT))
+                            time.sleep(0.05)
+                        sent_agents = payload
+                except Exception as e:
+                    print(f"agent status: {e}", flush=True)
+                continue
+            if not watcher:
+                time.sleep(wait)
+            sent_agents = send_agents(sock, args.target)
             for msg in latest + latest[:1]:  # the pipelines twice: big packets get lost more often
                 try:
                     sock.sendto(msg, (args.target, PORT))
                     time.sleep(0.2)  # the Presto's radio only buffers a few packets
                 except OSError as e:
                     print(f"resend: {e}", flush=True)
+            resent = time.time()
 
 
 if __name__ == "__main__":

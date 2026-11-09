@@ -233,6 +233,15 @@ names, credentials, and tokens out of committed code, examples, and logs.
 - Every message includes `src` (computer name). Keep per-computer state
   separate and merge only for display; closing one host clears only its data.
   Stale agents and pipelines expire after three minutes without updates.
+- In WSL2 (NAT, mirrored networking doesn't work on the laptop) broadcasts go
+  out through a `python.exe` relay on Windows (`udp.py`); unicast is sent directly.
+- The Herdr desktop app runs on herdr-core (`hc`, no plugins). There
+  `pipelines.py --source hc` runs as the systemd user service `presto-poller`
+  (`poller_ctl.py install-service`, `run`): agents and spaces come from the
+  first line of `hc events --json` (a full snapshot; `hc ls` has no titles),
+  the stream itself triggers sends on changes (only when the payload differs,
+  progress messages change constantly), and it waits instead of exiting when
+  `hc` is gone. hc's `error` status is sent as `blocked`.
 - `usage.py` reads `~/.cache/presto-usage.json`, written by Claude Code's
   status line (the only place Claude Code exposes `rate_limits`), and sends
   `type: usage`. Across hosts, the newest `ts` wins; it is shown in a slim tile

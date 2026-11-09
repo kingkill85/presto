@@ -327,6 +327,9 @@ herdr plugin link "$PWD/herdr-plugin"
 
 The Presto needs WiFi (`secrets.py`) on the same network. If broadcast doesn't
 reach it, write its IP into `$(herdr plugin config-dir presto.clawd)/target`.
+In WSL2 (NAT network) a broadcast doesn't leave the VM, so `udp.py` hands
+broadcasts to Windows' `python.exe`, which sends them on every network interface.
+That needs Python installed on Windows and `python3` in WSL.
 
 ## CI pipelines of the active spaces
 
@@ -359,6 +362,26 @@ Settings go into `$(herdr plugin config-dir presto.clawd)/pipelines.json`:
 ```
 
 Without `"pinned"` only the spaces are shown. Needs `glab`/`gh` logged in.
+
+### Herdr desktop app (herdr-core, `hc`)
+
+The Herdr desktop app runs its terminals on herdr-core (`hc`), which has no
+plugins. There the poller runs as a systemd user service instead and takes
+the agents and spaces from `hc` (`--source hc`): it follows `hc events`, so a
+status change goes out at once, and it keeps running (and says goodbye to the
+Presto) while `hc` is down. Install it once on the computer where `hc` runs
+(it uses the same `pipelines.json`):
+
+```sh
+python3 herdr-plugin/poller_ctl.py install-service   # or uninstall-service
+journalctl --user -u presto-poller -f
+```
+
+With lingering on (`loginctl enable-linger`) it starts with the computer. In
+WSL, something has to start the distro after a Windows login, e.g. a
+`wsl.exe -d <distro> --exec true` in the Windows autostart and
+`instanceIdleTimeout=-1` in `.wslconfig`. While the service runs, the TUI
+plugin's `ensure` leaves the poller to it.
 
 ## Claude usage limits
 
